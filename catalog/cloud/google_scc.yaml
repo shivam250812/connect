@@ -1,0 +1,20 @@
+# Google Security Command Center — findings.
+# Login: service-account JSON key -> signed JWT -> access token · Paging: pageToken
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: google-scc
+name: Google Security Command Center findings
+source: google_scc
+entity: event
+schedule: {every: 30m}
+allowed_hosts: [securitycenter.googleapis.com, oauth2.googleapis.com]
+auth: {type: google_service_account, secret: gcp_service_account_json, scope: "https://www.googleapis.com/auth/cloud-platform"}
+request: {base_url: "https://securitycenter.googleapis.com", path: /v1/organizations/YOUR_ORG_ID/sources/-/findings, params: {filter: 'state="ACTIVE"'}}
+pagination: {type: next_token, token_path: nextPageToken, token_param: pageToken, page_size_param: pageSize, page_size: 500}
+records: listFindingsResults
+mapping:
+  id: finding.name
+  type: finding.category
+  severity: {from: finding.severity, lower: true}
+  timestamp: finding.eventTime
+  description: {template: "{finding.category} on {finding.resourceName}"}

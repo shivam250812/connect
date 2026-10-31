@@ -1,0 +1,22 @@
+# LAB — XML API (Sophos Firewall pattern): credentials travel inside the request XML, response is XML.
+id: lab-xml-firewall
+name: "Lab: XML firewall events"
+source: xmlfw_lab
+entity: event
+schedule: {every: 10m}
+request:
+  base_url: http://127.0.0.1:9100/xmlfw
+  path: /webconsole/APIController
+  params:
+    reqxml: "<Request><Login><Username>fwapi</Username><Password>${secret:xmlfw_lab_password}</Password></Login><Get><Event/></Get></Request>"
+  response_format: xml
+records: Response.Events.Event
+mapping:
+  id: "@id"
+  type: {template: "firewall_{Action}", lower: true}
+  timestamp: Time
+  description: {template: "{Rule}: {SrcIP} -> {DstIP}:{DstPort}"}
+  src_ip: SrcIP
+  dst_ip: DstIP
+  dst_port: DstPort
+  action: Action

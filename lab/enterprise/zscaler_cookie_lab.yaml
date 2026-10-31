@@ -1,0 +1,26 @@
+# LAB — session cookie after an obfuscated-API-key login (Zscaler ZIA pattern).
+id: lab-zia-users
+name: "Lab: ZIA-style users (session cookie)"
+source: zia_lab
+entity: user
+schedule: {every: 30m}
+auth:
+  type: token_exchange
+  login:
+    url: http://127.0.0.1:9100/zia/api/v1/authenticatedSession
+    json:
+      apiKey: ${zscaler_key:zia_lab_api_key}
+      username: admin@acme.example
+      password: ${secret:zia_lab_password}
+      timestamp: ${now_ms}
+    token_from: cookie
+    token_path: JSESSIONID
+    ttl_seconds: 1500
+request: {base_url: "http://127.0.0.1:9100/zia", path: /api/v1/users}
+pagination: {type: page_number, page_param: page, page_size_param: pageSize, page_size: 50}
+mapping:
+  id: {from: id, type: str}
+  name: name
+  email: email
+  department: department.name
+  status: {from: deleted, map: {"True": deleted, "False": active}}

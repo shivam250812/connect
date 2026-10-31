@@ -1,0 +1,29 @@
+# CrowdStrike Falcon (Cloud Security alerts) — combined alerts API.
+# Login: OAuth2 client credentials (credentials in body) · Paging: `after` token in body · Incremental: FQL filter
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: crowdstrike-cloud
+name: CrowdStrike cloud security alerts
+source: crowdstrike
+entity: event
+schedule: {every: 10m}
+auth:
+  type: oauth2_client_credentials
+  token_url: https://api.crowdstrike.com/oauth2/token
+  client_id: YOUR_CLIENT_ID
+  secret: crowdstrike_client_secret
+  client_auth: body
+request:
+  base_url: https://api.crowdstrike.com
+  path: /alerts/combined/alerts/v1
+  method: POST
+  body: {limit: 500, sort: "created_timestamp.asc"}
+pagination: {type: next_token, token_path: meta.pagination.after, token_param: after, token_in: body}
+cursor: {field: created_timestamp, param: filter, in: body, initial: -1d, format: iso_z, template: "product:['cspm','cwpp']+created_timestamp:>'{value}'"}
+records: resources
+mapping:
+  id: composite_id
+  type: {template: "{product}: {name}"}
+  severity: {from: severity_name, lower: true}
+  timestamp: created_timestamp
+  description: description

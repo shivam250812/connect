@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ConnectForge</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" class="logo" aria-hidden="true"><circle cx="8" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="24" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14.5 20 9.5M12 17.5l8 5" stroke="currentColor" stroke-width="2"/></svg>
+      <div><div class="name">ConnectForge</div><div class="sub">Config-driven security integration platform · new source = a config file, not new code</div></div>
+    </div>
+    <div class="actions">
+      <span id="updated" class="muted"></span>
+      <button class="btn" data-goto="secrets">🔒 Secrets</button>
+      <button class="btn primary" id="btn-add">+ Add source</button>
+    </div>
+  </header>
+
+  <section id="summary" class="summary"></section>
+  <section id="load-errors"></section>
+  <h2 class="section">Connections</h2>
+  <section id="grid" class="grid"></section>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="users">Users</button>
+    <button class="tab" data-tab="devices">Devices</button>
+    <button class="tab" data-tab="events">Events / alerts</button>
+    <button class="tab" data-tab="quarantine">Quarantined records</button>
+    <button class="tab" data-tab="alerts">Alerts</button>
+    <button class="tab" data-tab="secrets">Secrets</button>
+    <button class="tab" data-tab="audit">Audit log</button>
+  </nav>
+  <section id="tab-body" class="panel"></section>
+
+  <div id="drawer" class="overlay hidden">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="drawer-title"></h2><button class="btn small" data-close>Close</button></div>
+      <div id="drawer-body"></div>
+    </div>
+  </div>
+
+  <div id="add" class="overlay hidden">
+    <div class="sheet">
+      <div class="sheet-head"><h2>Add a source</h2>
+        <div class="row">
+          <div class="subtabs"><button class="btn small active" data-mode="form">Web form</button><button class="btn small" data-mode="yaml">YAML</button></div>
+          <label class="btn small" for="yaml-file">📄 Upload .yaml</label><input id="yaml-file" type="file" accept=".yaml,.yml" hidden>
+          <select id="example-pick"><option value="">Load example…</option></select>
+          <button class="btn small" data-close>Close</button></div></div>
+      <div id="mode-form"></div>
+      <div id="mode-yaml" class="hidden"><textarea id="yaml" spellcheck="false"></textarea></div>
+      <div class="row">
+        <button class="btn" id="btn-validate">Validate</button>
+        <button class="btn" id="btn-test">Test connection</button>
+        <button class="btn" id="btn-preview">Dry-run preview</button>
+        <button class="btn primary" id="btn-save">Save &amp; start</button>
+      </div>
+      <div id="add-out"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

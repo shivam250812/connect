@@ -1,0 +1,21 @@
+# LAB — Juniper SRX RT_FLOW structured syslog, parsed with a regex. Same shared syslog file, own filter.
+id: lab-juniper-srx
+name: "Lab: Juniper SRX (syslog RT_FLOW)"
+source: juniper_lab
+entity: event
+kind: file
+schedule: {every: 15s}
+file:
+  path: data/feeds/syslog.log
+  format: regex
+  filter: RT_FLOW
+  pattern: '^<\d+>1 (?P<ts>\S+) (?P<host>\S+) RT_FLOW - (?P<event>RT_FLOW_SESSION_\w+) - source-address="(?P<src>[^"]+)" source-port="(?P<sport>\d+)" destination-address="(?P<dst>[^"]+)" destination-port="(?P<dport>\d+)" protocol-id="(?P<proto>\d+)" policy-name="(?P<policy>[^"]+)"'
+mapping:
+  id: {template: "{host}-{ts}-{src}:{sport}"}
+  type: {from: event, map: {RT_FLOW_SESSION_DENY: traffic_denied, RT_FLOW_SESSION_CREATE: traffic_allowed}}
+  severity: {from: event, map: {RT_FLOW_SESSION_DENY: medium}, map_default: info}
+  timestamp: ts
+  description: {template: "{policy}: {src} -> {dst}:{dport}"}
+  src_ip: src
+  dst_ip: dst
+  dst_port: dport

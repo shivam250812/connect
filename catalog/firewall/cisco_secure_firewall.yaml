@@ -1,0 +1,29 @@
+# Cisco Secure Firewall Management Center (FMC) — managed firewall DEVICES.
+# Login: basic auth on generatetoken -> token in the RESPONSE HEADER X-auth-access-token · Paging: offset / limit
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: cisco-fmc-devices
+name: Cisco FMC devices
+source: cisco_fmc
+entity: device
+schedule: {every: 1h}
+auth:
+  type: token_exchange
+  header: X-auth-access-token
+  scheme: ""
+  login:
+    url: https://fmc.example.com/api/fmc_platform/v1/auth/generatetoken
+    basic_username: fmc-api-user
+    basic_password: ${secret:fmc_password}
+    token_from: header
+    token_path: X-auth-access-token
+    ttl_seconds: 1700
+request: {base_url: "https://fmc.example.com", path: /api/fmc_config/v1/domain/YOUR_DOMAIN_UUID/devices/devicerecords, params: {expanded: "true"}}
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100, total_path: paging.count}
+records: items
+mapping:
+  id: id
+  hostname: name
+  ip: hostName
+  os: {template: "{model} {sw_version}"}
+  status: healthStatus

@@ -1,0 +1,26 @@
+# LAB — OAuth2 then whoami discovery: the API tells us our region host + tenant header (Sophos Central pattern).
+id: lab-sophos-alerts
+name: "Lab: Sophos-style alerts (discovery + cursor)"
+source: sophos_lab
+entity: event
+schedule: {every: 5m}
+auth:
+  type: oauth2_client_credentials
+  token_url: http://127.0.0.1:9100/oauth/token
+  client_id: lab-client-id
+  secret: oauth_lab_client_secret
+  client_auth: body
+  scope: token
+  discover:
+    url: http://127.0.0.1:9100/sophos/whoami/v1
+    base_url_path: apiHosts.dataRegion
+    headers: {X-Tenant-ID: id}
+request: {base_url: "http://127.0.0.1:9100/sophos", path: /siem/v1/alerts}
+pagination: {type: next_token, token_path: next_cursor, token_param: cursor, has_more_path: has_more, page_size_param: limit, page_size: 40}
+records: items
+mapping:
+  id: id
+  type: type
+  severity: severity
+  timestamp: when
+  description: description

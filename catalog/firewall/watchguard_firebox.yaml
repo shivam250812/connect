@@ -1,0 +1,24 @@
+# WatchGuard Firebox — traffic log messages over syslog (Fireware syslog format).
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: watchguard-syslog
+name: WatchGuard Firebox (syslog)
+source: watchguard
+entity: event
+kind: file
+schedule: {every: 15s}
+file:
+  path: data/feeds/syslog.log
+  format: regex
+  filter: 'firewall: msg_id='
+  pattern: '\((?P<ts>[0-9T:-]+)\) firewall: msg_id="(?P<msgid>[^"]+)" (?P<action>Allow|Deny) (?P<src_if>\S+) (?P<dst_if>\S+) (?P<proto>\S+) (?P<src>\S+) (?P<dst>\S+) (?P<sport>\d+) (?P<dport>\d+)'
+mapping:
+  id: {template: "{ts}-{src}:{sport}-{dst}:{dport}"}
+  type: {from: action, map: {Allow: traffic_allowed, Deny: traffic_denied}}
+  severity: {from: action, map: {Deny: medium}, map_default: info}
+  timestamp: ts
+  description: {template: "{action} {proto} {src} -> {dst}:{dport} ({msgid})"}
+  src_ip: src
+  dst_ip: dst
+  dst_port: dport
+  action: action

@@ -1,0 +1,23 @@
+# Seceon aiSIEM — via syslog in CEF format (no usable pull API on the free/standard tier, or push is the vendor's
+# recommended SIEM integration). Configure a syslog/CEF notification destination in aiSIEM.
+# Point the device's syslog/CEF forwarder at this platform: UDP <host>:CF_SYSLOG_PORT (default 5514).
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: seceon-cef
+name: "Seceon aiSIEM (syslog CEF)"
+source: seceon
+entity: event
+kind: file
+schedule: {every: 30s}
+file: {path: data/feeds/syslog.log, format: cef, filter: "CEF:0\\|Seceon"}
+mapping:
+  id: {template: "{device_product}-{rt}-{signature_id}-{src}-{dst}-{dpt}"}
+  type: {template: "{device_product}: {name}"}
+  severity: {from: severity, map: {"0": info, "1": low, "2": low, "3": low, "4": medium, "5": medium, "6": medium, "7": high, "8": high, "9": critical, "10": critical, Low: low, Medium: medium, High: high, Very-High: critical}, map_default: medium}
+  timestamp: rt
+  description: {template: "{name} {msg}"}
+  user: suser
+  src_ip: src
+  dst_ip: dst
+  dst_port: dpt
+  action: act

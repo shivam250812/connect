@@ -1,0 +1,26 @@
+# LAB — token returned in a response HEADER (Cisco FMC pattern), basic auth on the login call.
+id: lab-fmc-devices
+name: "Lab: FMC-style devices (header token)"
+source: fmc_lab
+entity: device
+schedule: {every: 10m}
+auth:
+  type: token_exchange
+  header: X-auth-access-token
+  scheme: ""
+  login:
+    url: http://127.0.0.1:9100/fmc/api/fmc_platform/v1/auth/generatetoken
+    basic_username: fmc-api
+    basic_password: ${secret:fmc_lab_password}
+    token_from: header
+    token_path: X-auth-access-token
+    ttl_seconds: 1800
+request: {base_url: "http://127.0.0.1:9100/fmc", path: /api/fmc_config/v1/domain/e276abec/devices/devicerecords}
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 25, total_path: paging.count}
+records: items
+mapping:
+  id: id
+  hostname: name
+  ip: hostName
+  os: {template: "{model} {sw_version}"}
+  status: healthStatus

@@ -1,0 +1,21 @@
+# Jira Cloud (free plan) — users. Fill in your site and email, then set the `jira_api_token` secret.
+# Login: Basic auth (email + API token from id.atlassian.com/manage-profile/security/api-tokens)
+# Paging: offset (startAt / maxResults) · -> users
+id: jira-users
+name: Jira Cloud users
+source: jira
+entity: user
+schedule: {every: 1h}
+auth:
+  type: basic
+  username: you@example.com          # your Atlassian account email (not secret)
+  secret: jira_api_token
+request:
+  base_url: https://your-site.atlassian.net
+  path: /rest/api/3/users/search
+pagination: {type: offset, offset_param: startAt, page_size_param: maxResults, page_size: 50, max_pages: 20}
+mapping:
+  id: accountId
+  name: displayName
+  email: emailAddress
+  status: {from: active, map: {"True": active, "False": inactive}}

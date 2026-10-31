@@ -1,0 +1,19 @@
+# LAB — FortiGate firewall traffic log, tailed from a file the mock keeps writing.
+# Login: none · Paging: byte offset (rotation-aware) · Format: key=value · -> events
+id: lab-fortigate
+name: "Lab: FortiGate firewall"
+source: fortigate_lab
+entity: event
+kind: file
+schedule: {every: 15s}
+file: {path: data/feeds/fortigate.log, format: kv}
+mapping:
+  id: {template: "{devid}-{date}T{time}-{srcip}:{srcport}-{dstip}:{dstport}"}
+  type: {from: action, map: {accept: traffic_allowed, deny: traffic_denied}}
+  severity: {from: level, map: {warning: medium, notice: info}}
+  timestamp: {template: "{date} {time}", type: datetime, format: "%Y-%m-%d %H:%M:%S"}
+  description: {template: "{action} {service} {srcip} -> {dstip}:{dstport}"}
+  src_ip: srcip
+  dst_ip: dstip
+  dst_port: dstport
+  action: action

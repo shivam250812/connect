@@ -1,0 +1,34 @@
+# AWS GuardDuty — findings read through Security Hub (GuardDuty publishes there), filtered to GuardDuty.
+# (GuardDuty's own API needs a two-call list-then-get flow; Security Hub gives the same findings in one paged call.)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: aws-guardduty
+name: AWS GuardDuty findings (via Security Hub)
+source: aws_guardduty
+entity: event
+schedule: {every: 15m}
+auth:
+  type: aws_sigv4
+  access_key_id: ${secret:aws_access_key_id}
+  secret_access_key: ${secret:aws_secret_access_key}
+  region: ap-south-1
+  service: securityhub
+request:
+  base_url: https://securityhub.ap-south-1.amazonaws.com
+  path: /findings
+  method: POST
+  body:
+    MaxResults: 100
+    Filters:
+      UpdatedAt: [{Start: "", End: ""}]
+      ProductName: [{Value: GuardDuty, Comparison: EQUALS}]
+pagination: {type: next_token, token_path: NextToken, token_param: NextToken, token_in: body, max_pages: 50}
+cursor: {field: UpdatedAt, param: "Filters.UpdatedAt[0].Start", end_param: "Filters.UpdatedAt[0].End", in: body, initial: -1d}
+records: Findings
+mapping:
+  id: Id
+  type: "Types[0]"
+  severity: {from: Severity.Label, lower: true}
+  timestamp: UpdatedAt
+  description: Title
+  product: ProductName

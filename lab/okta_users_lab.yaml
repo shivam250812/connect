@@ -1,0 +1,24 @@
+# LAB — Okta-compatible users API on the local mock (for failure drills: 429s, outage, poisoned next link).
+id: lab-okta-users
+name: "Lab: Okta users"
+description: Okta API shape on the local mock — rate-limits every 3rd call, some malformed users
+source: okta_lab
+entity: user
+schedule: {every: 1m}
+auth:
+  type: bearer
+  scheme: SSWS
+  secret: okta_lab_token
+request:
+  base_url: http://127.0.0.1:9100
+  path: /okta/api/v1/users
+pagination: {type: link_header, page_size_param: limit, page_size: 50}
+rate_limit: {requests_per_second: 2, burst: 3}
+mapping:
+  id: id
+  name: {template: "{profile.firstName} {profile.lastName}"}
+  email: profile.login
+  status: {from: status, lower: true}
+  last_login: lastLogin
+  title: profile.title
+  department: profile.department

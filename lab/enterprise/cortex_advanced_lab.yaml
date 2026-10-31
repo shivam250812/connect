@@ -1,0 +1,30 @@
+# LAB — Cortex XSIAM/XDR advanced API key (per-request hash) + offsets nested in request_data.
+id: lab-cortex-alerts
+name: "Lab: Cortex-style alerts (advanced key)"
+source: cortex_lab
+entity: event
+schedule: {every: 5m}
+auth:
+  type: cortex_advanced
+  key_id: "7"
+  secret: cortex_lab_key
+request:
+  base_url: http://127.0.0.1:9100/cortex
+  path: /public_api/v1/alerts/get_alerts_multi_events
+  method: POST
+  body: {request_data: {sort: {field: creation_time, keyword: desc}}}
+pagination:
+  type: offset
+  params_in: body
+  offset_param: request_data.search_from
+  offset_end_param: request_data.search_to
+  page_size: 100
+  total_path: reply.total_count
+records: reply.alerts
+mapping:
+  id: alert_id
+  type: name
+  severity: severity
+  timestamp: detection_timestamp
+  description: {template: "{name} on {host_name}"}
+  src_ip: "host_ip[0]"

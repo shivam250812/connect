@@ -1,0 +1,30 @@
+# Symantec Endpoint Security (cloud, SES) — event search.
+# Login: OAuth2 client credentials (basic) · Paging: `next` token in the POST body · Incremental: start_date/end_date
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: symantec-ses
+name: Symantec Endpoint Security events
+source: symantec_ses
+entity: event
+schedule: {every: 10m}
+auth:
+  type: oauth2_client_credentials
+  token_url: https://api.sep.securitycloud.symantec.com/v1/oauth2/tokens
+  client_id: YOUR_CLIENT_ID
+  secret: ses_client_secret
+request:
+  base_url: https://api.sep.securitycloud.symantec.com
+  path: /v1/event-search
+  method: POST
+  body: {limit: 1000}
+pagination: {type: next_token, token_path: next, token_param: next, token_in: body}
+cursor: {field: time, param: start_date, end_param: end_date, in: body, initial: -1d, format: iso_z}
+records: events
+mapping:
+  id: uuid
+  type: {template: "ses_{type_id}"}
+  severity: {from: severity_id, map: {"1": info, "2": low, "3": medium, "4": high, "5": critical, "6": critical}, map_default: info}
+  timestamp: time
+  description: message
+  user: user.name
+  src_ip: device_ip

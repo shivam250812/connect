@@ -1,0 +1,20 @@
+# SonicWall — syslog in SonicOS key=value format ("id=firewall sn=... src=ip:port:if dst=ip:port:if ...").
+# Point SonicOS Log > Syslog at UDP <host>:CF_SYSLOG_PORT.
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: sonicwall-syslog
+name: SonicWall (syslog)
+source: sonicwall
+entity: event
+kind: file
+schedule: {every: 15s}
+file: {path: data/feeds/syslog.log, format: kv, filter: "id=firewall"}
+mapping:
+  id: {template: "{sn}-{time}-{src}-{dst}-{m}"}
+  type: {template: "sonicwall_{m}"}
+  severity: {from: pri, map: {"1": critical, "2": critical, "3": high, "4": medium, "5": low, "6": info}, map_default: info}
+  timestamp: {from: time, type: datetime, format: "%Y-%m-%d %H:%M:%S"}
+  description: msg
+  src_ip: {from: src, regex: "^([^:]+)"}
+  dst_ip: {from: dst, regex: "^([^:]+)"}
+  dst_port: {from: dst, regex: "^[^:]+:(\\d+)"}

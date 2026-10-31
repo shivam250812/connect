@@ -1,0 +1,34 @@
+# LAB — AWS CloudTrail LookupEvents shape on the local mock (real SigV4 signing, verified by the mock).
+# Login: AWS SigV4 · Paging: NextToken in body · Incremental: StartTime · -> events
+id: lab-aws-cloudtrail
+name: "Lab: AWS CloudTrail"
+source: aws_lab
+entity: event
+schedule: {every: 1m}
+auth:
+  type: aws_sigv4
+  access_key_id: ${secret:aws_access_key_id}
+  secret_access_key: ${secret:aws_secret_access_key}
+  region: ap-south-1
+  service: cloudtrail
+request:
+  base_url: http://127.0.0.1:9100
+  path: /aws/
+  method: POST
+  headers:
+    X-Amz-Target: com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents
+    Content-Type: application/x-amz-json-1.1
+  body: {MaxResults: 50}
+pagination: {type: next_token, token_path: NextToken, token_param: NextToken, token_in: body}
+cursor: {field: EventTime, param: StartTime, in: body, initial: -1h, format: epoch}
+records: Events
+rate_limit: {requests_per_second: 2, burst: 2}
+mapping:
+  id: EventId
+  type: {from: EventName, map: {ConsoleLogin: login, StopLogging: logging_disabled, CreateAccessKey: credential_created}}
+  severity: {from: EventName, map: {StopLogging: high, CreateAccessKey: medium}, map_default: info}
+  timestamp: EventTime
+  description: {template: "{EventName} by {Username} via {EventSource}"}
+  user: {from: CloudTrailEvent, parse_json: true, path: userIdentity.userName}
+  src_ip: {from: CloudTrailEvent, parse_json: true, path: sourceIPAddress}
+  outcome: {from: CloudTrailEvent, parse_json: true, path: errorCode, default: success, lower: true}

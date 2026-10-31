@@ -1,0 +1,27 @@
+# Lacework FortiCNAPP — alerts.
+# Login: POST /api/v2/access/tokens with key ID + secret (X-LW-UAKS header) -> bearer token · Paging: next-page URL
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: lacework-alerts
+name: Lacework FortiCNAPP alerts
+source: lacework
+entity: event
+schedule: {every: 15m}
+auth:
+  type: token_exchange
+  login:
+    url: https://youraccount.lacework.net/api/v2/access/tokens
+    headers: {X-LW-UAKS: "${secret:lacework_secret}"}
+    json: {keyId: "YOUR_KEY_ID", expiryTime: 3600}
+    token_path: token
+    ttl_seconds: 3500
+request: {base_url: "https://youraccount.lacework.net", path: /api/v2/Alerts}
+pagination: {type: next_url, token_path: paging.urls.nextPage}
+cursor: {field: startTime, param: startTime, end_param: endTime, initial: -1d, format: iso_z}
+records: data
+mapping:
+  id: {from: alertId, type: str}
+  type: alertType
+  severity: {from: severity, lower: true}
+  timestamp: startTime
+  description: alertName

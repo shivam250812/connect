@@ -1,0 +1,20 @@
+# Orca Security — alerts.
+# Login: API token (Authorization: Token <key>) · Paging: next_page_token
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: orca-alerts
+name: Orca Security alerts
+source: orca
+entity: event
+schedule: {every: 15m}
+auth: {type: bearer, scheme: Token, secret: orca_api_token}
+request: {base_url: "https://api.orcasecurity.io", path: /api/alerts}
+pagination: {type: next_token, token_path: next_page_token, token_param: next_page_token, page_size_param: limit, page_size: 500}
+records: data
+mapping:
+  id: state.alert_id
+  type: type_string
+  severity: {from: state.severity, lower: true}
+  timestamp: state.created_at
+  description: description
+  product: asset_name

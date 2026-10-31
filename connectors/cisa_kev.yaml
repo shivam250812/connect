@@ -1,0 +1,22 @@
+# CISA Known Exploited Vulnerabilities catalog (real feed, free).
+# Login: none · Paging: none (one JSON document) · -> events
+id: cisa-kev
+name: CISA Known Exploited Vulnerabilities
+description: CVEs actively exploited in the wild (US CISA catalog)
+source: cisa_kev
+entity: event
+schedule: {every: 6h}
+request:
+  base_url: https://www.cisa.gov
+  path: /sites/default/files/feeds/known_exploited_vulnerabilities.json
+  timeout_seconds: 60
+records: vulnerabilities
+mapping:
+  id: cveID
+  type: {const: known_exploited_vulnerability}
+  severity: {from: knownRansomwareCampaignUse, map: {Known: critical}, map_default: high}
+  timestamp: dateAdded
+  description: {template: "{vendorProject} {product}: {shortDescription}"}
+  cve: cveID
+  product: {template: "{vendorProject} {product}"}
+  action: requiredAction

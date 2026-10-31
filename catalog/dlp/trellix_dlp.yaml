@@ -1,0 +1,18 @@
+# Trellix DLP — events through the Trellix ePO remote API (a saved query of DLP events).
+# Login: Basic auth · Paging: none (the saved query bounds the result)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: trellix-dlp
+name: Trellix DLP (ePO query)
+source: trellix_dlp
+entity: event
+schedule: {every: 15m}
+auth: {type: basic, username: epo-api-user, secret: epo_password}
+request: {base_url: "https://epo.example.com:8443", path: /remote/core.executeQuery, params: {queryId: "YOUR_QUERY_ID", ":output": json}}
+mapping:
+  id: {from: "['EPOEvents.AutoID']", type: str}
+  type: {template: "dlp_{['EPOEvents.ThreatName']}"}
+  severity: {from: "['EPOEvents.ThreatSeverity']", type: str}
+  timestamp: "['EPOEvents.DetectedUTC']"
+  description: "['EPOEvents.ThreatName']"
+  user: "['EPOEvents.SourceUserName']"

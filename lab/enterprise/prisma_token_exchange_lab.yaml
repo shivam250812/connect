@@ -1,0 +1,25 @@
+# LAB — token exchange (Prisma Cloud pattern): POST JSON credentials -> token in body -> custom header.
+id: lab-prisma-alerts
+name: "Lab: Prisma-style alerts (token exchange)"
+source: prisma_lab
+entity: event
+schedule: {every: 5m}
+auth:
+  type: token_exchange
+  header: x-redlock-auth
+  scheme: ""
+  login:
+    url: http://127.0.0.1:9100/prisma/login
+    json: {username: "${secret:prisma_lab_key}", password: "${secret:prisma_lab_secret}"}
+    token_path: token
+    ttl_seconds: 540
+request: {base_url: "http://127.0.0.1:9100/prisma", path: /v2/alert}
+pagination: {type: next_token, token_path: nextPageToken, token_param: pageToken, page_size_param: limit, page_size: 50}
+records: items
+mapping:
+  id: id
+  type: {template: "cspm_{policy.name}"}
+  severity: policy.severity
+  timestamp: alertTime
+  description: {template: "{policy.name} on {resource.cloudType} resource {resource.name}"}
+  outcome: status

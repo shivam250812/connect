@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# runtime state — contains the encrypted vault and its master key: never commit
+data/
+
+# local credentials and personal files — never commit
+.env
+*.env
+*.jpeg
+*.jpg

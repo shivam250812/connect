@@ -1,0 +1,19 @@
+# LAB — Google service-account JWT (RS256) -> access token -> pageToken paging (Security Command Center pattern).
+id: lab-google-scc
+name: "Lab: Google SCC-style findings (service account)"
+source: gscc_lab
+entity: event
+schedule: {every: 30m}
+auth:
+  type: google_service_account
+  secret: google_lab_service_account
+  scope: https://www.googleapis.com/auth/cloud-platform
+request: {base_url: "http://127.0.0.1:9100/google", path: /v2/organizations/123/sources/-/findings}
+pagination: {type: next_token, token_path: nextPageToken, token_param: pageToken, page_size_param: pageSize, page_size: 25}
+records: listFindingsResults
+mapping:
+  id: finding.name
+  type: finding.category
+  severity: {from: finding.severity, lower: true}
+  timestamp: finding.eventTime
+  description: {template: "{finding.category} on {finding.resourceName}"}

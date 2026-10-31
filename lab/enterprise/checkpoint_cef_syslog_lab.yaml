@@ -1,0 +1,18 @@
+# LAB — Check Point via syslog/CEF (Log Exporter). The platform's UDP syslog receiver writes data/feeds/syslog.log.
+id: lab-checkpoint-cef
+name: "Lab: Check Point (syslog CEF)"
+source: checkpoint_lab
+entity: event
+kind: file
+schedule: {every: 15s}
+file: {path: data/feeds/syslog.log, format: cef, filter: "CEF:0\\|Check Point"}
+mapping:
+  id: externalId
+  type: {template: "firewall_{act}", lower: true}
+  severity: {from: severity, map: {"5": high, "2": low}, map_default: medium}
+  timestamp: rt
+  description: {template: "{cs1}: {src} -> {dst}:{dpt}"}
+  src_ip: src
+  dst_ip: dst
+  dst_port: dpt
+  action: act

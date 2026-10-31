@@ -1,0 +1,25 @@
+# AbuseIPDB — abuse reports for one IP (free tier). Set the `abuseipdb_key` secret (abuseipdb.com/account/api).
+# Login: API key in the `Key` header · Paging: page number · -> events
+id: abuseipdb
+name: AbuseIPDB reports
+source: abuseipdb
+entity: event
+schedule: {every: 1h}
+auth:
+  type: api_key
+  header: Key
+  secret: abuseipdb_key
+request:
+  base_url: https://api.abuseipdb.com
+  path: /api/v2/reports
+  headers: {Accept: application/json}
+  params: {ipAddress: 118.25.6.39, maxAgeInDays: 30}
+pagination: {type: page_number, page_param: page, page_size_param: perPage, page_size: 100, max_pages: 5}
+records: data.results
+mapping:
+  id: {template: "{reportedAt}-{reporterId}"}
+  type: {const: malicious_ip_report}
+  severity: {const: medium}
+  timestamp: reportedAt
+  description: comment
+  country: reporterCountryCode

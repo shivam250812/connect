@@ -1,0 +1,24 @@
+# GitHub REST API — public user accounts -> the USERS table (real API, reuses the github_token secret).
+# Login: Bearer token · Paging: Link header (the `since` cursor is inside the next link) · Entity: user
+id: github-users
+name: GitHub users
+description: Public GitHub accounts, mapped into the common users schema
+source: github
+entity: user
+schedule: {every: 30m}
+auth:
+  type: bearer
+  secret: github_token
+request:
+  base_url: https://api.github.com
+  path: /users
+  headers:
+    Accept: application/vnd.github+json
+    X-GitHub-Api-Version: "2022-11-28"
+pagination: {type: link_header, page_size_param: per_page, page_size: 100, max_pages: 2}
+rate_limit: {requests_per_second: 1, burst: 2}
+mapping:
+  id: {from: id, type: str}
+  name: login
+  status: {from: type, map: {User: active, Organization: organization, Bot: bot}, map_default: unknown}
+  title: {from: site_admin, map: {"True": github_staff, "False": member}}

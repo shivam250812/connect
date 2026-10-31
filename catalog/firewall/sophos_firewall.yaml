@@ -1,0 +1,21 @@
+# Sophos Firewall (XGS/SFOS) — logs via syslog key=value (device_name=... log_type="Firewall" src_ip=...).
+# (Its XML API exposes configuration, not logs — XML support is shown in lab/enterprise/xml_firewall_lab.yaml.)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: sophos-firewall-syslog
+name: Sophos Firewall (syslog)
+source: sophos_fw
+entity: event
+kind: file
+schedule: {every: 15s}
+file: {path: data/feeds/syslog.log, format: kv, filter: 'log_type="Firewall"'}
+mapping:
+  id: log_id
+  type: {template: "sophos_fw_{log_subtype}", lower: true}
+  severity: {from: severity, lower: true, default: info}
+  timestamp: {template: "{date} {time}", type: datetime, format: "%Y-%m-%d %H:%M:%S"}
+  description: {template: "{log_subtype} {fw_rule_name} {src_ip} -> {dst_ip}:{dst_port}"}
+  src_ip: src_ip
+  dst_ip: dst_ip
+  dst_port: dst_port
+  action: log_subtype

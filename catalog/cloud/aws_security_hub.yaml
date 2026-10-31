@@ -1,0 +1,33 @@
+# AWS Security Hub — findings (GetFindings).
+# Login: AWS SigV4 (IAM user/role with securityhub:GetFindings) · Paging: NextToken in body · Incremental: UpdatedAt filter (nested)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: aws-security-hub
+name: AWS Security Hub findings
+source: aws_securityhub
+entity: event
+schedule: {every: 15m}
+auth:
+  type: aws_sigv4
+  access_key_id: ${secret:aws_access_key_id}
+  secret_access_key: ${secret:aws_secret_access_key}
+  region: ap-south-1
+  service: securityhub
+request:
+  base_url: https://securityhub.ap-south-1.amazonaws.com
+  path: /findings
+  method: POST
+  body:
+    MaxResults: 100
+    Filters:
+      UpdatedAt: [{Start: "", End: ""}]
+pagination: {type: next_token, token_path: NextToken, token_param: NextToken, token_in: body, max_pages: 50}
+cursor: {field: UpdatedAt, param: "Filters.UpdatedAt[0].Start", end_param: "Filters.UpdatedAt[0].End", in: body, initial: -1d}
+records: Findings
+mapping:
+  id: Id
+  type: "Types[0]"
+  severity: {from: Severity.Label, lower: true}
+  timestamp: UpdatedAt
+  description: Title
+  product: ProductName

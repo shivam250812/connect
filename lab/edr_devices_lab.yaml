@@ -1,0 +1,26 @@
+# LAB — endpoint agent (EDR) device inventory on the local mock.
+# Login: API key header · Paging: offset with total · -> devices
+id: lab-edr-devices
+name: "Lab: EDR devices"
+description: Endpoint inventory — hostnames, IPs, OS, owner, last check-in
+source: edr_lab
+entity: device
+schedule: {every: 2m}
+auth:
+  type: api_key
+  header: X-API-Key
+  secret: edr_api_key
+request:
+  base_url: http://127.0.0.1:9100
+  path: /edr/api/devices
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100, total_path: total}
+records: items
+mapping:
+  id: device_id
+  hostname: hostname
+  ip: local_ip
+  os: os_name
+  owner: assigned_user
+  last_seen: last_contact
+  mac: mac
+  status: agent_status
