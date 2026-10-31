@@ -1,0 +1,27 @@
+# Check Point — firewall logs via Management REST API (show-logs).
+# Login: API key header (X-chkp-sid) · Paging: offset / limit · -> events
+id: checkpoint-api
+name: Check Point firewall logs (REST)
+source: checkpoint
+entity: event
+schedule: {every: 5m}
+allowed_hosts: [checkpoint.example.com]
+auth: {type: api_key, header: X-chkp-sid, secret: checkpoint_api_key}
+request:
+  base_url: https://checkpoint.example.com
+  path: /web_api/v1.9/show-logs
+  method: POST
+  body:
+    new-query: {type: top}
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100}
+records: logs
+mapping:
+  id: id
+  type: {template: "firewall_{action}", lower: true}
+  severity: {from: severity, default: info}
+  timestamp: time
+  description: {template: "{service}: {src} -> {dst}:{dpt}"}
+  src_ip: src
+  dst_ip: dst
+  dst_port: dpt
+  action: action

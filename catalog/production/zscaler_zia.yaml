@@ -1,0 +1,28 @@
+# Zscaler Internet Access (ZIA) — users.
+# Login: obfuscated API key + username/password -> session cookie JSESSIONID · Paging: page / pageSize
+id: zscaler-zia-users
+name: Zscaler ZIA users
+source: zscaler
+entity: user
+schedule: {every: 1h}
+allowed_hosts: [zsapi.zscaler.net]
+auth:
+  type: token_exchange
+  login:
+    url: https://zsapi.zscaler.net/api/v1/authenticatedSession
+    json:
+      apiKey: ${zscaler_key:zscaler_api_key}
+      username: admin@yourcompany.com
+      password: ${secret:zscaler_password}
+      timestamp: ${now_ms}
+    token_from: cookie
+    token_path: JSESSIONID
+    ttl_seconds: 1500
+request: {base_url: "https://zsapi.zscaler.net", path: /api/v1/users}
+pagination: {type: page_number, page_param: page, page_size_param: pageSize, page_size: 500}
+mapping:
+  id: {from: id, type: str}
+  name: name
+  email: email
+  department: department.name
+

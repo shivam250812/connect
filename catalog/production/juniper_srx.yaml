@@ -1,0 +1,24 @@
+# Juniper SRX — firewall flow events via REST API.
+# Login: Bearer token · Paging: offset / limit · -> events
+id: juniper-srx
+name: Juniper SRX flow events (REST)
+source: juniper_srx
+entity: event
+schedule: {every: 5m}
+allowed_hosts: [srx.example.com]
+auth: {type: bearer, secret: juniper_token}
+request:
+  base_url: https://srx.example.com
+  path: /api/v1/flow-events
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100}
+records: items
+mapping:
+  id: id
+  type: {from: event, map: {RT_FLOW_SESSION_DENY: traffic_denied, RT_FLOW_SESSION_CREATE: traffic_allowed}, map_default: traffic}
+  severity: {from: event, map: {RT_FLOW_SESSION_DENY: medium}, map_default: info}
+  timestamp: timestamp
+  description: {template: "{policy}: {src} -> {dst}:{dport}"}
+  src_ip: src
+  dst_ip: dst
+  dst_port: dport
+  action: {from: event, map: {RT_FLOW_SESSION_DENY: deny, RT_FLOW_SESSION_CREATE: accept}, map_default: allow}

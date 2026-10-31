@@ -1,0 +1,26 @@
+# EDR Endpoint Devices — inventory of managed workstations and servers.
+# Login: API key header · Paging: offset with total · -> devices
+id: edr-devices
+name: EDR endpoint inventory
+source: edr
+entity: device
+schedule: {every: 15m}
+allowed_hosts: [api.edr.example.com]
+auth:
+  type: api_key
+  header: Authorization
+  secret: edr_api_key
+request:
+  base_url: https://api.edr.example.com
+  path: /v1/devices
+pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100, total_path: total}
+records: items
+mapping:
+  id: device_id
+  hostname: hostname
+  ip: ip_address
+  os: os_version
+  owner: user_email
+  last_seen: last_seen_at
+  status: status
+

@@ -1,0 +1,30 @@
+# Palo Alto Cortex XSIAM / XDR — alerts via public API.
+# Login: Advanced API key (per-request SHA-256 of key+nonce+timestamp) + key ID · Paging: search_from/search_to in request_data
+id: cortex-xsiam
+name: Cortex XSIAM alerts
+source: cortex_xsiam
+entity: event
+schedule: {every: 5m}
+allowed_hosts: ["*.xdr.us.paloaltonetworks.com"]
+auth: {type: cortex_advanced, key_id: "YOUR_KEY_ID", secret: cortex_api_key}
+request:
+  base_url: https://api-tenant.xdr.us.paloaltonetworks.com
+  path: /public_api/v1/alerts/get_alerts_multi_events
+  method: POST
+  body:
+    request_data:
+      filters: [{field: creation_time, operator: gte, value: 0}]
+      sort: {field: creation_time, keyword: asc}
+pagination: {type: offset, params_in: body, offset_param: request_data.search_from, offset_end_param: request_data.search_to, page_size: 100, total_path: reply.total_count, max_pages: 50}
+cursor: {field: detection_timestamp, param: "request_data.filters[0].value", in: body, format: epoch_ms, initial: -1d}
+records: reply.alerts
+mapping:
+  id: alert_id
+  type: name
+  severity: severity
+  timestamp: detection_timestamp
+  description: {template: "{name} on host {host_name} (status: {alert_status})"}
+  user: user_name
+  src_ip: source_ip
+  dst_ip: endpoint_ip
+
