@@ -1,0 +1,21 @@
+id: okta-users
+name: Okta users
+source: okta
+entity: user
+schedule: {every: 15m}
+auth:
+  type: bearer
+  scheme: SSWS
+  secret: okta_token
+request:
+  base_url: https://trial-7339118.okta.com   # Replace with your actual Okta domain
+  path: /api/v1/users
+pagination: {type: link_header, page_size_param: limit, page_size: 200}
+mapping:
+  id: id
+  name: {template: "{profile.firstName} {profile.lastName}"}
+  email: profile.login
+  status: {from: status, lower: true}
+  last_login: lastLogin
+  title: profile.title
+  department: profile.department

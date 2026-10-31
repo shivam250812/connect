@@ -1,0 +1,34 @@
+# AWS CloudTrail — events read via real AWS SigV4 signing.
+# Login: AWS SigV4 · Paging: NextToken in body · Incremental: StartTime · -> events
+id: aws-cloudtrail
+name: AWS CloudTrail events
+source: aws_cloudtrail
+entity: event
+schedule: {every: 5m}
+allowed_hosts: [cloudtrail.ap-south-1.amazonaws.com, cloudtrail.us-east-1.amazonaws.com]
+auth:
+  type: aws_sigv4
+  access_key_id: ${secret:aws_access_key_id}
+  secret_access_key: ${secret:aws_secret_access_key}
+  region: ap-south-1
+  service: cloudtrail
+request:
+  base_url: https://cloudtrail.ap-south-1.amazonaws.com
+  path: /
+  method: POST
+  headers:
+    X-Amz-Target: com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents
+    Content-Type: application/x-amz-json-1.1
+  body:
+    MaxResults: 50
+pagination: {type: next_token, token_path: NextToken, token_param: NextToken, token_in: body}
+cursor: {field: timestamp, param: StartTime, in: body, format: epoch, initial: -1h}
+records: Events
+mapping:
+  id: EventId
+  type: {template: "cloudtrail_{EventName}", lower: true}
+  severity: {const: info}
+  timestamp: EventTime
+  description: {template: "{EventName} by {Username} on {Resources[0].ResourceName}"}
+  user: Username
+  country: {from: CloudTrailEvent, parse_json: true, path: recipientAccountId}

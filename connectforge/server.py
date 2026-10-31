@@ -22,7 +22,7 @@ from .spec import ENTITY_FIELDS, REQUIRED, TABLES, SpecError, masked, parse_spec
 from .vault import SecretAccessDenied, SecretMissing
 
 STATIC = Path(__file__).parent / "static"
-DIRS = [Path(d) for d in os.environ.get("CF_CONNECTORS_DIRS", "connectors:lab:lab/enterprise").split(":") if d]
+DIRS = [Path(d) for d in os.environ.get("CF_CONNECTORS_DIRS", "connectors").split(":") if d]
 DATA_DIR = Path(os.environ.get("CF_DATA_DIR", "data"))
 EXAMPLE_DIRS = [Path("examples"), Path("catalog"), Path("lab"), Path("connectors")]
 

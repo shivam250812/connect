@@ -1,0 +1,23 @@
+# Fortinet FortiGate — traffic logs via the REST API.
+# Login: REST API key (Bearer) · Paging: start / rows offset · -> events
+id: fortigate-api
+name: FortiGate traffic logs (REST)
+source: fortigate
+entity: event
+schedule: {every: 5m}
+allowed_hosts: [fortigate.example.com]
+auth: {type: bearer, secret: fortigate_api_key}
+request: {base_url: "https://fortigate.example.com", path: /api/v2/log/memory/traffic/forward}
+pagination: {type: offset, offset_param: start, page_size_param: rows, page_size: 500, max_pages: 10}
+records: results
+mapping:
+  id: {template: "{devid}-{eventtime}-{sessionid}"}
+  type: {from: action, map: {accept: traffic_allowed, deny: traffic_denied, close: traffic_allowed}, map_default: traffic}
+  severity: {from: level, map: {warning: medium, notice: info, alert: high}, map_default: info}
+  timestamp: {template: "{date} {time}", type: datetime, format: "%Y-%m-%d %H:%M:%S"}
+  description: {template: "{action} {service} {srcip} -> {dstip}:{dstport}"}
+  src_ip: srcip
+  dst_ip: dstip
+  dst_port: dstport
+  action: action
+
