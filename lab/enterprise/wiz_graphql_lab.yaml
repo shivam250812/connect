@@ -1,6 +1,6 @@
 # LAB — OAuth2 with `audience` + GraphQL with a nested cursor (Wiz pattern).
 id: lab-wiz-issues
-name: "Lab: Wiz-style issues (GraphQL)"
+name: "Wiz-style issues (GraphQL)"
 source: wiz_lab
 entity: event
 schedule: {every: 15m}

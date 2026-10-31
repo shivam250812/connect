@@ -1,6 +1,6 @@
 # LAB — session cookie after an obfuscated-API-key login (Zscaler ZIA pattern).
 id: lab-zia-users
-name: "Lab: ZIA-style users (session cookie)"
+name: "ZIA-style users (session cookie)"
 source: zia_lab
 entity: user
 schedule: {every: 30m}

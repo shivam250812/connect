@@ -1,6 +1,6 @@
 # LAB — XML API (Sophos Firewall pattern): credentials travel inside the request XML, response is XML.
 id: lab-xml-firewall
-name: "Lab: XML firewall events"
+name: "XML firewall events"
 source: xmlfw_lab
 entity: event
 schedule: {every: 10m}

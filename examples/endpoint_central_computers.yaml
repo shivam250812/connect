@@ -1,0 +1,31 @@
+# ManageEngine Endpoint Central Cloud (India data center) -> the DEVICES table.
+# Login: Zoho OAuth refresh token, exchanged for a 1-hour access token (Authorization: Zoho-oauthtoken <token>)
+# Paging: page / pagelimit · Mapping: automatic (check it with Preview)
+#
+# Before uploading:
+#   1. Replace YOUR_CLIENT_ID with the Self Client's Client ID (api-console.zoho.in).
+#   2. Secrets tab: endpoint_central_client_secret and endpoint_central_refresh_token.
+#   Other data centers: change both .in addresses (.com = US, .eu = Europe).
+id: endpoint-central-computers
+name: Endpoint Central computers
+description: Managed computers, agent status and last contact
+source: endpoint_central
+entity: device
+schedule: {every: 30m}
+auth:
+  type: token_exchange
+  header: Authorization
+  scheme: Zoho-oauthtoken
+  login:
+    url: https://accounts.zoho.in/oauth/v2/token
+    form:
+      grant_type: refresh_token
+      client_id: YOUR_CLIENT_ID
+      client_secret: ${secret:endpoint_central_client_secret}
+      refresh_token: ${secret:endpoint_central_refresh_token}
+    token_path: access_token
+    expires_in_path: expires_in
+request:
+  base_url: https://endpointcentral.manageengine.in
+  path: /api/1.4/som/computers
+pagination: {type: page_number, page_param: page, page_size_param: pagelimit, page_size: 100, max_pages: 50}

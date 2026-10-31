@@ -1,6 +1,6 @@
 # LAB — Check Point via syslog/CEF (Log Exporter). The platform's UDP syslog receiver writes data/feeds/syslog.log.
 id: lab-checkpoint-cef
-name: "Lab: Check Point (syslog CEF)"
+name: "Check Point (syslog CEF)"
 source: checkpoint_lab
 entity: event
 kind: file

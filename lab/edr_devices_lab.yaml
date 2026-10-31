@@ -1,7 +1,7 @@
 # LAB — endpoint agent (EDR) device inventory on the local mock.
 # Login: API key header · Paging: offset with total · -> devices
 id: lab-edr-devices
-name: "Lab: EDR devices"
+name: "EDR devices"
 description: Endpoint inventory — hostnames, IPs, OS, owner, last check-in
 source: edr_lab
 entity: device

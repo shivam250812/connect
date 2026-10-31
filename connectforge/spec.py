@@ -31,6 +31,35 @@ REQUIRED: Dict[str, List[str]] = {
 }
 TABLES = {"user": "users", "device": "devices", "event": "events"}
 SECRET_REF = re.compile(r"\$\{secret:([a-zA-Z0-9_.-]+)\}")
+_ANY_REF = re.compile(r"\$\{(secret|env|zscaler_key):[A-Za-z0-9_.-]+\}")
+# keys that carry credentials when they appear in headers / query params / bodies
+_CREDENTIAL_KEY = re.compile(r"(^|[-_])(authorization|api[-_]?key|apikey|x[-_]api[-_]key|token|access[-_]?token|"
+                             r"secret|client[-_]?secret|password|passwd|pwd|session|cookie|private[-_]?key|"
+                             r"signature|uaks)($|[-_])|^key$", re.I)
+# well-known token formats — rejected wherever they are pasted, under any key
+KNOWN_TOKEN = re.compile(
+    r"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|"
+    r"sk_live_[A-Za-z0-9]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|glpat-[A-Za-z0-9_-]{20}|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")
+
+
+def find_plaintext_credentials(obj, where: str = "") -> List[str]:
+    """Locations in a config where a credential is written literally instead of as ${secret:…}/${env:…}."""
+    found: List[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            loc = f"{where}.{k}" if where else str(k)
+            if isinstance(v, str) and _CREDENTIAL_KEY.search(str(k)) and v.strip() and not _ANY_REF.search(v) \
+                    and not re.fullmatch(r"(?i)(bearer|basic|token|sswS|apikey)?\s*", v):
+                found.append(loc)
+            else:
+                found += find_plaintext_credentials(v, loc)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            found += find_plaintext_credentials(v, f"{where}[{i}]")
+    elif isinstance(obj, str) and KNOWN_TOKEN.search(obj):
+        found.append(where or "value")
+    return found
 _DURATION = re.compile(r"^\s*(\d+)\s*(s|sec|m|min|h|hr|d)\w*\s*$", re.I)
 
 
@@ -251,11 +280,13 @@ class ConnectorSpec(_Strict):
     file: Optional[FileSpec] = None
     rate_limit: RateLimitSpec = Field(default_factory=RateLimitSpec)
     retry: RetrySpec = Field(default_factory=RetrySpec)
-    mapping: Dict[str, FieldMap]
+    mapping: Optional[Dict[str, FieldMap]] = None   # None (left out, empty, or `auto`) = learned from the data
 
     @field_validator("mapping", mode="before")
     @classmethod
     def _shorthand(cls, v):
+        if v is None or (isinstance(v, str) and v.strip().lower() == "auto"):
+            return None
         # PRD style: `email: profile.login` means `email: {from: profile.login}`
         if isinstance(v, dict):
             return {k: ({"from": m} if isinstance(m, str) else m) for k, m in v.items()}
@@ -264,12 +295,13 @@ class ConnectorSpec(_Strict):
     @model_validator(mode="after")
     def _consistency(self):
         allowed = ENTITY_FIELDS[self.entity]
-        unknown = sorted(set(self.mapping) - set(allowed))
+        unknown = sorted(set(self.mapping or {}) - set(allowed))
         if unknown:
             raise ValueError(f"mapping: unknown {self.entity} field(s) {unknown}; allowed: {sorted(allowed)}")
-        missing = [f for f in REQUIRED[self.entity] if f not in self.mapping]
+        missing = [f for f in REQUIRED[self.entity] if self.mapping is not None and f not in self.mapping]
         if missing:
-            raise ValueError(f"mapping: required {self.entity} field(s) {missing} have no mapping")
+            raise ValueError(f"mapping: required {self.entity} field(s) {missing} have no mapping "
+                             f"(or leave `mapping` out to map automatically)")
         if self.kind == "http" and not self.request:
             raise ValueError("kind: http requires a 'request' block")
         if self.kind == "file" and not self.file:
@@ -297,6 +329,18 @@ class ConnectorSpec(_Strict):
                         and not SECRET_REF.fullmatch(value):
                     raise ValueError(f"auth.{name}: credentials must come from the vault (`secret: name`), "
                                      "never written in the config")
+            leaks = find_plaintext_credentials(
+                {"headers": self.request.headers, "params": self.request.params, "body": self.request.body or {}},
+                "request")
+            if leaks:
+                raise ValueError(f"{', '.join(leaks)}: looks like a credential written in plain text. Store it in "
+                                 "the vault and reference it as ${secret:name} (or ${env:NAME})")
+        # well-known token formats are refused anywhere in the file (mapping constants, descriptions, …)
+        anywhere = [loc for loc in find_plaintext_credentials(self.model_dump(mode="json", by_alias=True))
+                    if KNOWN_TOKEN.search(str(_dig(self.model_dump(mode="json", by_alias=True), loc)))]
+        if anywhere:
+            raise ValueError(f"{', '.join(anywhere)}: contains a real-looking token (GitHub/AWS/Slack/Stripe/Google/"
+                             "private key/JWT). Secrets must not be written in a config file")
         return self
 
     @property
@@ -325,6 +369,15 @@ class ConnectorSpec(_Strict):
         return any(host == h or (h.startswith("*.") and host.endswith(h[1:])) for h in self.egress_hosts())
 
 
+def _dig(obj, loc: str):
+    for i, k, nme in re.findall(r"\[(\d+)\]|\.?([^.\[\]]+)|()", loc):
+        if i:
+            obj = obj[int(i)] if isinstance(obj, list) and int(i) < len(obj) else None
+        elif k:
+            obj = obj.get(k) if isinstance(obj, dict) else None
+    return obj
+
+
 class SpecError(ValueError):
     def __init__(self, errors: List[str]):
         super().__init__("; ".join(errors))
@@ -342,7 +395,9 @@ def parse_spec(text: str) -> ConnectorSpec:
         return ConnectorSpec.model_validate(data)
     except ValidationError as e:
         raise SpecError([
-            f"{'.'.join(str(p) for p in err['loc']) or 'connector'}: {err['msg'].removeprefix('Value error, ')}"
+            f"{'.'.join(str(p) for p in err['loc']) or 'connector'}: "
+            + ("unknown setting, not part of the connector format (check the spelling or remove it)"
+               if err["type"] == "extra_forbidden" else err["msg"].removeprefix("Value error, "))
             for err in e.errors()
         ]) from e
 

@@ -22,9 +22,10 @@ from .spec import ENTITY_FIELDS, REQUIRED, TABLES, SpecError, masked, parse_spec
 from .vault import SecretAccessDenied, SecretMissing
 
 STATIC = Path(__file__).parent / "static"
-DIRS = [Path(d) for d in os.environ.get("CF_CONNECTORS_DIRS", "connectors:lab:lab/enterprise").split(":") if d]
+LAB = os.environ.get("CF_LAB") == "1"  # mock lab sources, for failure drills
+DIRS = [Path(d) for d in os.environ.get("CF_CONNECTORS_DIRS", "connectors:lab:lab/enterprise" if LAB else "connectors").split(":") if d]
 DATA_DIR = Path(os.environ.get("CF_DATA_DIR", "data"))
-EXAMPLE_DIRS = [Path("examples"), Path("catalog"), Path("lab"), Path("connectors")]
+EXAMPLE_DIRS = [Path("examples"), Path("catalog"), Path("connectors")] + ([Path("lab")] if LAB else [])
 
 platform = Platform(DIRS[0], DATA_DIR)
 
@@ -114,7 +115,7 @@ def validate(body: ConnectorText):
     return {"valid": True, "errors": [], "id": spec.id, "summary": {
         "entity": spec.entity, "table": TABLES[spec.entity], "kind": spec.kind, "auth": spec.auth.type,
         "pagination": spec.pagination.type, "every_seconds": spec.schedule.seconds,
-        "fields": sorted(spec.mapping), "secrets": spec.secret_names,
+        "fields": sorted(spec.mapping) if spec.mapping is not None else ["automatic"], "secrets": spec.secret_names,
         "hosts": sorted(spec.egress_hosts()) if spec.kind == "http" else []}}
 
 
@@ -125,6 +126,19 @@ def add_connector(body: ConnectorText, actor: str = Depends(admin)):
     except SpecError as e:
         raise HTTPException(400, {"errors": e.errors}) from e
     return platform.health(spec.id)
+
+
+@app.get("/api/connectors/{cid}/yaml", response_class=PlainTextResponse)
+def connector_yaml(cid: str):
+    """Current YAML for editing in the page (contains only secret *names*, never values)."""
+    _state(cid)
+    return platform.yaml_text(cid)
+
+
+@app.post("/api/reload")
+def reload_configs(actor: str = Depends(admin)):
+    """Re-read connector files edited on disk — no restart needed."""
+    return platform.reload_dir(DIRS[1:], actor=actor)
 
 
 @app.delete("/api/connectors/{cid}")
@@ -213,8 +227,24 @@ def secrets():
 
 @app.put("/api/secrets/{name}")
 def put_secret(name: str, body: SecretValue, actor: str = Depends(admin)):
-    platform.vault.put(name, body.value, actor=actor)
-    return {"stored": name}
+    try:
+        platform.vault.put(name, body.value, actor=actor)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"stored": name, "refreshed": platform.secret_changed(name)}
+
+
+@app.post("/api/secrets/{name}/refresh")
+def refresh_secret(name: str, actor: str = Depends(admin)):
+    """Rotated in the secret manager? Pick up the new value now instead of after the cache expires."""
+    affected = platform.secret_changed(name)
+    platform.store.audit(actor, "secret.refresh", name)
+    return {"refreshed": affected}
+
+
+@app.get("/api/secrets/backend")
+def secrets_backend():
+    return {"backend": platform.vault.backend_name, "writable": platform.vault.backend is None}
 
 
 @app.get("/api/audit")

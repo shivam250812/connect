@@ -37,6 +37,11 @@ def _env(name: str) -> str:
     return os.environ[name]
 
 
+def provider_message(resp: httpx.Response, limit: int = 300) -> str:
+    """The provider's error body on one line, so pretty-printed JSON does not use up the length limit."""
+    return re.sub(r"\s+", " ", resp.text).strip()[:limit]
+
+
 def make_resolver(get_secret: Callable[[str], str]) -> Resolver:
     """Resolve `${secret:name}` from the vault and `${env:NAME}` from the environment, at request time."""
     def resolve(value: Optional[str]) -> Optional[str]:
@@ -128,8 +133,10 @@ class Authenticator:
 
     def __init__(self, spec: AuthSpec, resolve: Resolver,
                  host_allowed: Callable[[Optional[str]], bool] = lambda h: True,
-                 client_factory: Optional[Callable[[], httpx.AsyncClient]] = None):
+                 client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
+                 forget_secrets: Callable[[], bool] = lambda: False):
         self.spec = spec
+        self.forget_secrets = forget_secrets  # drops cached secret values; True if any were cached
         self.resolve = resolve
         self.host_allowed = host_allowed
         self.client_factory = client_factory or (lambda: httpx.AsyncClient(timeout=30))
@@ -140,11 +147,12 @@ class Authenticator:
         self._discovered = False
 
     def invalidate(self) -> bool:
-        """Drop cached short-lived credentials; returns True if a refresh is possible."""
+        """Drop cached short-lived credentials and cached secret values; True if a fresh attempt is worth it."""
+        forgot = self.forget_secrets()
         if self.spec.type in ("oauth2_client_credentials", "token_exchange", "google_service_account"):
             self._token, self._discovered = None, False
             return True
-        return False
+        return forgot
 
     def _check(self, url: str) -> None:
         if not self.host_allowed(urlsplit(url).hostname):
@@ -183,8 +191,12 @@ class Authenticator:
             auth = (cid, csecret)
         async with self.client_factory() as c:
             resp = await c.post(s.token_url, data=data, auth=auth)
-        if resp.status_code != 200:
-            raise AuthError(f"token endpoint returned HTTP {resp.status_code}")
+        if 300 <= resp.status_code < 400:  # never re-send credentials to a redirect; say where it points
+            raise AuthError(f"token endpoint redirected (HTTP {resp.status_code}) to "
+                            f"{resp.headers.get('location', 'an unknown address')}. If that is the vendor's "
+                            f"correct region, use that host in token_url and base_url")
+        if not 200 <= resp.status_code < 300:  # CrowdStrike answers 201 Created
+            raise AuthError(f"token endpoint returned HTTP {resp.status_code}: {provider_message(resp)}")
         body = resp.json()
         return body["access_token"], body.get("expires_in", 300)
 
@@ -195,7 +207,7 @@ class Authenticator:
             resp = await c.post(token_uri, data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
                                                  "assertion": assertion})
         if resp.status_code != 200:
-            raise AuthError(f"Google token endpoint returned HTTP {resp.status_code}: {resp.text[:200]}")
+            raise AuthError(f"Google token endpoint returned HTTP {resp.status_code}: {provider_message(resp)}")
         body = resp.json()
         return body["access_token"], body.get("expires_in", 3600)
 
@@ -213,7 +225,7 @@ class Authenticator:
         async with self.client_factory() as c:
             resp = await c.request(lg.method, lg.url, **kwargs)
         if resp.status_code >= 400:
-            raise AuthError(f"login returned HTTP {resp.status_code}: {resp.text[:200]}")
+            raise AuthError(f"login returned HTTP {resp.status_code}: {provider_message(resp)}")
         if lg.token_from == "header":
             token = resp.headers.get(lg.token_path)
         elif lg.token_from == "cookie":
@@ -235,7 +247,7 @@ class Authenticator:
         self._check(d.url)
         resp = await client.get(d.url, headers=auth_headers)
         if resp.status_code != 200:
-            raise AuthError(f"discovery call returned HTTP {resp.status_code}")
+            raise AuthError(f"discovery call returned HTTP {resp.status_code}: {provider_message(resp)}")
         data = resp.json()
         if d.base_url_path:
             base = get_path(data, d.base_url_path)

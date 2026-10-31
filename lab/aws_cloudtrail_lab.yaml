@@ -1,7 +1,7 @@
 # LAB — AWS CloudTrail LookupEvents shape on the local mock (real SigV4 signing, verified by the mock).
 # Login: AWS SigV4 · Paging: NextToken in body · Incremental: StartTime · -> events
 id: lab-aws-cloudtrail
-name: "Lab: AWS CloudTrail"
+name: "AWS CloudTrail"
 source: aws_lab
 entity: event
 schedule: {every: 1m}

@@ -123,6 +123,13 @@ class Store:
 
     # --- checkpoints ---------------------------------------------------------------------------
 
+    def purge(self, connector: str) -> int:
+        """Delete everything one connector produced: records, runs, checkpoint, quarantine and alerts."""
+        n = 0
+        for table in list(TABLES.values()) + ["runs", "cursors", "quarantine", "alerts"]:
+            n += self._exec(f"DELETE FROM {table} WHERE connector=?", (connector,)).rowcount
+        return n
+
     def get_cursor(self, connector: str) -> Optional[str]:
         rows = self._rows("SELECT value FROM cursors WHERE connector=?", (connector,))
         return rows[0]["value"] if rows else None

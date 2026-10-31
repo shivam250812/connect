@@ -1,6 +1,6 @@
 # LAB — OAuth2 then whoami discovery: the API tells us our region host + tenant header (Sophos Central pattern).
 id: lab-sophos-alerts
-name: "Lab: Sophos-style alerts (discovery + cursor)"
+name: "Sophos-style alerts (discovery + cursor)"
 source: sophos_lab
 entity: event
 schedule: {every: 5m}

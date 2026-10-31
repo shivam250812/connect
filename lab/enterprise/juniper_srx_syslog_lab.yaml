@@ -1,6 +1,6 @@
 # LAB — Juniper SRX RT_FLOW structured syslog, parsed with a regex. Same shared syslog file, own filter.
 id: lab-juniper-srx
-name: "Lab: Juniper SRX (syslog RT_FLOW)"
+name: "Juniper SRX (syslog RT_FLOW)"
 source: juniper_lab
 entity: event
 kind: file

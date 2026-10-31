@@ -1,6 +1,6 @@
 # LAB — token returned in a response HEADER (Cisco FMC pattern), basic auth on the login call.
 id: lab-fmc-devices
-name: "Lab: FMC-style devices (header token)"
+name: "FMC-style devices (header token)"
 source: fmc_lab
 entity: device
 schedule: {every: 10m}

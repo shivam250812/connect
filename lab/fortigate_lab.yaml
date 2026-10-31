@@ -1,7 +1,7 @@
 # LAB — FortiGate firewall traffic log, tailed from a file the mock keeps writing.
 # Login: none · Paging: byte offset (rotation-aware) · Format: key=value · -> events
 id: lab-fortigate
-name: "Lab: FortiGate firewall"
+name: "FortiGate firewall"
 source: fortigate_lab
 entity: event
 kind: file

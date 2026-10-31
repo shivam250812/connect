@@ -23,8 +23,9 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from .auth import AuthError, Authenticator, make_resolver
-from .mapping import MappingError, get_path, map_record, parse_cef, parse_datetime, set_path, xml_to_dict
+from .auth import AuthError, Authenticator, make_resolver, provider_message
+from .mapping import (MappingError, find_records, get_path, infer_mapping, map_record, mapping_yaml, parse_cef,
+                      parse_datetime, set_path, xml_to_dict)
 from .mapping import preview as map_preview
 from .spec import ConnectorSpec, CursorSpec, SpecError, parse_spec
 from .store import Store, now_iso
@@ -110,7 +111,7 @@ class Fetcher:
         host = urlsplit(url).hostname
         if not self.spec.host_allowed(host):
             self.on_block(url)
-            raise EgressBlocked(f"blocked request to '{host}' (not in allowed_hosts) — credentials were not sent")
+            raise EgressBlocked(f"blocked request to '{host}' (not in allowed_hosts), credentials were not sent")
 
     def backoff(self, attempt: int) -> float:
         r = self.spec.retry
@@ -142,7 +143,11 @@ class Fetcher:
             except httpx.TimeoutException:
                 last = "timeout"
             except httpx.TransportError as e:
-                last = f"network error ({type(e).__name__})"
+                last = f"network error ({type(e).__name__}) reaching {req.url.host}"
+                if re.search(r"nodename nor servname|Name or service not known|getaddrinfo|No address associated", str(e)):
+                    last += ": host name not found, check base_url in the config"
+                elif "refused" in str(e).lower():
+                    last += ": connection refused, is the service running on that port?"
             else:
                 code = resp.status_code
                 if code == 401 and not refreshed and self.auth.invalidate():
@@ -151,15 +156,15 @@ class Fetcher:
                 if code in r.retry_on:
                     last, hint = f"HTTP {code}", retry_after_seconds(resp)
                 elif 300 <= code < 400:
-                    raise FetchError(f"HTTP {code} redirect refused — credentials never follow redirects")
+                    raise FetchError(f"HTTP {code} redirect refused, credentials are never sent to redirects")
                 elif code in (401, 403):
                     hint = "invalid or expired credential" if code == 401 else \
                         "credential accepted but not allowed here (missing permission or wrong account/resource)"
-                    raise FetchError(f"HTTP {code}: authentication failed — {hint}; check the secret "
+                    raise FetchError(f"HTTP {code}: authentication failed ({hint}). Check the secret "
                                      f"({', '.join(self.spec.secret_names) or 'none configured'}). "
-                                     f"Provider said: {resp.text[:300]}")
+                                     f"Provider said: {provider_message(resp)}")
                 elif code >= 400:
-                    raise FetchError(f"HTTP {code}: {resp.text[:200]}")
+                    raise FetchError(f"HTTP {code}: {provider_message(resp)}")
                 else:
                     return resp
             if attempt == self.max_attempts:
@@ -167,7 +172,7 @@ class Fetcher:
             delay = min(hint, r.max_delay_seconds) if hint is not None else self.backoff(attempt)
             self.metrics.retries += 1
             why = "Retry-After" if hint is not None else "backoff"
-            self.metrics.notes.append(f"{last} → retry {attempt} in {delay:g}s ({why})")
+            self.metrics.notes.append(f"{last}, retry {attempt} in {delay:g}s ({why})")
             await self.sleep(delay)
         raise FetchError(f"failed after {self.max_attempts} attempts: {last}")
 
@@ -230,6 +235,8 @@ async def fetch_pages(spec: ConnectorSpec, fetcher: Fetcher, cursor: Optional[da
         except (ValueError, MappingError) as e:
             raise FetchError(f"response body is not valid {req.response_format.upper()}: {e}") from e
         records = get_path(data, spec.records)
+        if not spec.records and isinstance(records, dict):
+            records = find_records(records)  # `records` left out: use the response's list of objects
         if records is None:
             records = []
         if not isinstance(records, list):
@@ -246,7 +253,7 @@ async def fetch_pages(spec: ConnectorSpec, fetcher: Fetcher, cursor: Optional[da
             url, params = urljoin(str(resp.url), nxt), {}
         elif p.type == "next_token":
             token = get_path(data, p.token_path)
-            if not token:
+            if not token or not records:  # some APIs keep handing out a token on an empty last page
                 return
             put(p.token_in, p.token_param, token)
         elif p.type == "page_number":
@@ -322,6 +329,7 @@ class ConnectorState:
     last_notes: List[str] = field(default_factory=list)
     alerted: bool = False
     path: Optional[Path] = None       # the YAML file this connector came from
+    learned: Optional[Dict[str, Any]] = None  # automatic mapping, when the config has none
 
 
 class Platform:
@@ -333,6 +341,7 @@ class Platform:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.store = Store(self.data_dir / "connectforge.db")
         self.vault = Vault(self.data_dir / "vault.json", audit=self.store.audit)
+        self.vault.on_change = self.secret_changed  # e.g. `cli set-secret` while the server is running
         self.transport, self.sleep, self.alert_transport = transport, sleep, alert_transport
         self.file_roots = [p.resolve() for p in (file_roots or [self.data_dir / "feeds"])]
         self.states: Dict[str, ConnectorState] = {}
@@ -350,7 +359,22 @@ class Platform:
                                                             spec.rate_limit.burst, self.sleep),
                               auth=Authenticator(spec.auth, resolve, spec.host_allowed,
                                                  client_factory=lambda: httpx.AsyncClient(
-                                                     transport=self.transport, timeout=30, follow_redirects=False)))
+                                                     transport=self.transport, timeout=30, follow_redirects=False),
+                                                 forget_secrets=lambda: self._forget_cached(spec.secret_names)))
+
+    def _forget_cached(self, names: List[str]) -> bool:
+        backend = self.vault.backend
+        return any([backend.forget(n) for n in names]) if backend else False
+
+    def secret_changed(self, name: str) -> List[str]:
+        """A secret was rotated: drop its cached value and every login token derived from it, so the
+        next request uses the new key. Returns the connectors affected."""
+        if self.vault.backend:
+            self.vault.backend.forget(name)
+        affected = [cid for cid, st in self.states.items() if name in st.spec.secret_names]
+        for cid in affected:
+            self.states[cid].auth.invalidate()
+        return affected
 
     def load_dir(self, extra_dirs: Optional[List[Path]] = None) -> None:
         """Load every connector file. New connectors from the UI are saved to the first directory."""
@@ -365,6 +389,38 @@ class Platform:
                 continue
             self.states[spec.id] = self._make_state(spec)
             self.states[spec.id].path = path
+
+    def reload_dir(self, extra_dirs: Optional[List[Path]] = None, actor: str = "admin") -> dict:
+        """Pick up YAML files edited on disk (e.g. in VS Code) without restarting.
+        Changed files replace their connector; new files are added; broken files are reported, not loaded."""
+        changed, added, errors = [], [], {}
+        for path in [p for d in [self.connectors_dir, *(extra_dirs or [])] if Path(d).exists()
+                     for p in sorted(Path(d).glob("*.y*ml"))]:
+            try:
+                spec = parse_spec(path.read_text())
+            except SpecError as e:
+                errors[path.name] = e.errors
+                continue
+            old = self.states.get(spec.id)
+            if old and old.spec == spec:
+                continue
+            if old and old.running:
+                errors[path.name] = ["connector is running, reload again in a moment"]
+                continue
+            self.states[spec.id] = self._make_state(spec)
+            self.states[spec.id].path = path
+            (changed if old else added).append(spec.id)
+            self.store.audit(actor, "connector.reloaded" if old else "connector.added", spec.id)
+        self.load_errors = errors
+        return {"changed": changed, "added": added, "errors": errors}
+
+    def yaml_text(self, cid: str) -> str:
+        """The connector's YAML as written (secrets appear only as ${secret:name} references)."""
+        st = self.states[cid]
+        if st.path and st.path.exists():
+            return st.path.read_text()
+        import yaml as _yaml
+        return _yaml.safe_dump(st.spec.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=False)
 
     def add(self, text: str, actor: str = "admin", persist: bool = True) -> ConnectorSpec:
         spec = parse_spec(text)
@@ -412,7 +468,27 @@ class Platform:
 
     # --- running ----------------------------------------------------------------------------------
 
+    def _auto_mapped(self, spec: ConnectorSpec, records: List[Any], m: RunMetrics,
+                     st: Optional[ConnectorState] = None) -> ConnectorSpec:
+        """No `mapping` in the config: learn it from the first records, then keep it for this connector."""
+        st = st or self.states.get(spec.id)
+        learned = st.learned if st else None
+        if learned is None:
+            try:
+                learned = infer_mapping(spec.entity, records, default_type=spec.source_name)
+            except MappingError as e:
+                raise FetchError(str(e)) from e
+            if st:
+                st.learned = learned
+            m.notes.append("mapped automatically: " + ", ".join(
+                f"{k} <- {fm.from_ if fm.from_ is not None else repr(fm.const)}" for k, fm in learned.items()))
+        return spec.model_copy(update={"mapping": learned})
+
     def _ingest(self, records: List[Any], spec: ConnectorSpec, run_id: int, m: RunMetrics) -> List[Any]:
+        if spec.mapping is None:
+            if not records:
+                return []
+            spec = self._auto_mapped(spec, records, m)
         good_raw, rows = [], []
         for rec in records:
             row, why = map_record(rec, spec)
@@ -454,7 +530,7 @@ class Platform:
         offset = int(self.store.get_cursor(spec.id) or 0)
         lines, new_offset, rotated = read_new_lines(path, offset, spec.file.max_bytes_per_run)
         if rotated:
-            m.notes.append("file rotated/truncated — reading from start")
+            m.notes.append("file rotated or truncated, reading from the start")
         m.pages, m.fetched = (1 if lines else 0), len(lines)
         parsed = []
         line_filter = re.compile(spec.file.filter) if spec.file.filter else None
@@ -564,7 +640,7 @@ class Platform:
             async for records in fetch_pages(spec, fetcher, cursor):
                 return {"ok": True, "connector": spec.id, "latency_ms": int((time.monotonic() - started) * 1000),
                         "detail": ("connected (no login needed)" if spec.auth.type == "none" else "authenticated")
-                                  + f" · first page returned {len(records)} record(s)",
+                                  + f", first page returned {len(records)} record(s)",
                         "auth": spec.auth.type}
             return {"ok": True, "connector": spec.id, "detail": "no data"}
         except (FetchError, AuthError, SecretMissing, SecretAccessDenied, OSError) as e:
@@ -588,8 +664,12 @@ class Platform:
             async for page in fetch_pages(spec, fetcher, cursor):
                 records = page
                 break
+        learned = None
+        if spec.mapping is None and records:
+            spec = self._auto_mapped(spec, records, m, st)
+            learned = mapping_yaml(spec.mapping)
         return {"connector": spec.id, "entity": spec.entity, "samples": map_preview(records, spec, limit),
-                "notes": m.notes}
+                "notes": m.notes, "learned_mapping": learned}
 
     # --- scheduler (FR-4) ---------------------------------------------------------------------------
 
@@ -631,7 +711,7 @@ class Platform:
         elif not lr:
             status = "running" if st.running else "pending"
         elif st.consecutive_failures >= ALERT_AFTER_FAILURES:
-            status, reasons = "failing", [f"{st.consecutive_failures} failed runs in a row — alert sent, backing off"]
+            status, reasons = "failing", [f"{st.consecutive_failures} failed runs in a row, alert sent, backing off"]
         elif lr["status"] == "error":
             status, reasons = "degraded", ["last run failed"]
         else:

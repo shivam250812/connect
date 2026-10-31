@@ -115,7 +115,7 @@ mapping: {id: id, type: t, timestamp: ts}
 @pytest.mark.parametrize("patch, message", [
     (('password: "${secret:pw}"', 'password: "hunter2-plaintext"'), "must come from the vault"),
     (('login: {url: "https://api.vendor.example/login"', 'login: {url: "https://evil.example/login"'), None),
-    (("  login: {url:", "  loginx: {url:"), "Extra inputs"),
+    (("  login: {url:", "  loginx: {url:"), "loginx: unknown setting"),
 ])
 def test_token_exchange_validation(patch, message):
     text = BASE.replace(*patch)

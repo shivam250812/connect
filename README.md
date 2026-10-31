@@ -20,7 +20,7 @@ There are also configs ready for **users**. Fill in your account details and set
 * [`examples/jira_users.yaml`](examples/jira_users.yaml): Jira Cloud, Basic email + API token, `startAt`/`maxResults` offset.
 * [`examples/abuseipdb_reports.yaml`](examples/abuseipdb_reports.yaml): AbuseIPDB, key header, page number.
 
-**Lab sources** in [`lab/`](lab/) run against a local mock (`connectforge/mock`). They fill the **users** and **devices** tables offline and let you run the PRD's failure drills on demand: 429s, outages, malformed records, a poisoned next-page link, AWS SigV4 and a tailed firewall log.
+**Lab sources** in [`lab/`](lab/) run against a local mock (`connectforge/mock`) and are off by default; start with `CF_LAB=1 ./run.sh` to add them (`cli remove-lab` clears their secrets and data again). They fill the **users** and **devices** tables offline and let you run the PRD's failure drills on demand: 429s, outages, malformed records, a poisoned next-page link, AWS SigV4 and a tailed firewall log.
 
 ## Enterprise coverage: 36 vendor configs in [`catalog/`](catalog/)
 
@@ -77,7 +77,7 @@ Every tool on Mitigata's list has a ready config. **No vendor-specific code was 
 
 | ID | Requirement | How |
 |---|---|---|
-| FR-6 | Secrets stored safely | Fernet-encrypted vault (`data/vault.json`, key kept separately, `data/` gitignored), or `${env:NAME}`. Configs hold only secret names, and literal credentials are rejected at validation. Secrets are write-only in the UI and API. Each connector can read only the secrets its own config names; every read is audited; any secret that appears in an error is redacted. |
+| FR-6 | Secrets stored safely | Pluggable secret manager chosen with `CF_SECRETS_BACKEND`: **HashiCorp Vault**, **AWS Secrets Manager**, environment variables, or the built-in Fernet-encrypted vault (`data/vault.json`, key kept separately, `data/` gitignored) for offline demos. Configs hold only secret names, and literal credentials are rejected at validation. Secrets are write-only in the UI and API. Each connector can read only the secrets its own config names; every read is audited; any secret that appears in an error is redacted. |
 | FR-7 | Retries with backoff | Timeouts, network errors and 5xx/429 are retried after **1 s, 2 s, 4 s**, then the run is marked failed. 401/403 fail immediately with "authentication failed — check the secret". |
 | FR-8 | Rate limits | A token bucket per connector, plus **`Retry-After`** / `X-Rate-Limit-Reset` honoured on 429 |
 | FR-9 | Bad data handling | Each record that fails mapping is quarantined with its exact reason (e.g. `last_login: Invalid isoformat string: 'yesterday'`). The run continues. |
@@ -105,7 +105,8 @@ Every tool on Mitigata's list has a ready config. **No vendor-specific code was 
 ## Run it
 
 ```bash
-./run.sh                                   # platform + health page on :8100, lab mock on :9100
+./run.sh                                   # platform + health page on :8100 (real connectors only)
+CF_LAB=1 ./run.sh                          # also the mock lab sources on :9100, for failure drills
 ```
 
 Set your secrets:
@@ -120,10 +121,40 @@ Other commands:
 ```bash
 .venv/bin/python -m connectforge.cli validate connectors/*.yaml examples/*.yaml lab/*.yaml
 .venv/bin/python -m connectforge.cli test github-advisories
-.venv/bin/python -m pytest -q                                    # 62 tests, ~1.5 s, no network
+.venv/bin/python -m pytest -q                                    # 81 tests, ~2 s, no network
 ```
 
 You can also set secrets on the **Secrets** tab.
+
+### Using an external secret manager
+
+Connector configs do not change: they still say `${secret:github_token}`. The platform decides where that name is looked up.
+
+| `CF_SECRETS_BACKEND` | Where `github_token` is read from | Settings |
+|---|---|---|
+| `local` (default) | encrypted `data/vault.json` | none |
+| `hashicorp` | KV v2: `secret/data/<prefix>github_token`, field `value` | `VAULT_ADDR`, `VAULT_TOKEN`, optional `CF_VAULT_MOUNT`, `CF_VAULT_FIELD`, `VAULT_NAMESPACE` |
+| `aws` | Secrets Manager secret `<prefix>github_token` (SecretString) | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN` |
+| `env` | `CF_SECRET_GITHUB_TOKEN` | none |
+
+`CF_SECRETS_PREFIX` (for example `connectforge/`) is put in front of every name. Values are cached for `CF_SECRETS_CACHE_SECONDS` (default 300), so a rotation in the manager is picked up within five minutes. With an external manager, values are set and rotated there; the Secrets tab becomes read-only and shows which connector uses each secret and whether it was found. Per-connector scoping, the audit log and redaction still apply.
+
+### Rotating a key
+
+No connector file changes; only the value behind the name changes.
+
+* **Built-in vault:** paste the new value on the **Secrets** tab and click **Save**, or run `cli set-secret <name>` (works while the server is running). Any login token made from the old key is dropped, so the very next request uses the new one. The tab shows each key's age and flags keys older than 90 days.
+* **External manager:** rotate it in Vault or AWS, then click **Reload** on the Secrets tab to use it immediately. Without that it is picked up when the cache expires, or at once if the provider rejects the old key: a 401 drops the cached value, re-reads it from the manager and retries once.
+* Every change is in the **Audit log** (`secret.put`, `secret.refresh`), never with the value.
+
+Try it with a local HashiCorp Vault dev server:
+
+```bash
+vault server -dev -dev-root-token-id=root &
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/connectforge/github_token value=ghp_...
+CF_SECRETS_BACKEND=hashicorp CF_SECRETS_PREFIX=connectforge/ \
+  VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root ./run.sh
+```
 
 ## Failure drills (PRD "Testing failures with real APIs")
 
@@ -152,7 +183,8 @@ connectforge/
   mapping.py    field mapping engine (FR-5)
   auth.py       api_key / bearer / basic / OAuth2 / SigV4, ${secret:} and ${env:} refs
   runtime.py    rate limit, retry/backoff, pagination, incremental sync, scheduler, health, alerts, test
-  vault.py      encrypted, scoped, audited secrets (FR-6)
+  vault.py      scoped, audited secrets (FR-6); local encrypted store or a backend below
+  secret_backends.py  HashiCorp Vault, AWS Secrets Manager, env (CF_SECRETS_BACKEND)
   syslog.py     UDP syslog receiver for push-only devices
   store.py      users / devices / events tables + state (FR-11)
   server.py     REST API + health page

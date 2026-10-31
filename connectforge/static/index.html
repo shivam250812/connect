@@ -8,61 +8,64 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand">
-      <svg viewBox="0 0 32 32" class="logo" aria-hidden="true"><circle cx="8" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="24" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14.5 20 9.5M12 17.5l8 5" stroke="currentColor" stroke-width="2"/></svg>
-      <div><div class="name">ConnectForge</div><div class="sub">Config-driven security integration platform · new source = a config file, not new code</div></div>
-    </div>
-    <div class="actions">
-      <span id="updated" class="muted"></span>
-      <button class="btn" data-goto="secrets">🔒 Secrets</button>
-      <button class="btn primary" id="btn-add">+ Add source</button>
+    <div class="top-inner">
+      <a class="product" href="/">ConnectForge</a>
+      <nav id="nav">
+        <a data-view="connections" class="on">Connections</a>
+        <a data-view="users">Users</a>
+        <a data-view="devices">Devices</a>
+        <a data-view="events">Events</a>
+        <a data-view="quarantine">Quarantine</a>
+        <a data-view="alerts">Alerts</a>
+        <a data-view="secrets">Secrets</a>
+        <a data-view="audit">Audit log</a>
+      </nav>
+      <span id="updated" class="muted small"></span>
     </div>
   </header>
 
-  <section id="summary" class="summary"></section>
-  <section id="load-errors"></section>
-  <h2 class="section">Connections</h2>
-  <section id="grid" class="grid"></section>
+  <main>
+    <div id="load-errors"></div>
+    <section id="view"></section>
+  </main>
 
-  <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="users">Users</button>
-    <button class="tab" data-tab="devices">Devices</button>
-    <button class="tab" data-tab="events">Events / alerts</button>
-    <button class="tab" data-tab="quarantine">Quarantined records</button>
-    <button class="tab" data-tab="alerts">Alerts</button>
-    <button class="tab" data-tab="secrets">Secrets</button>
-    <button class="tab" data-tab="audit">Audit log</button>
-  </nav>
-  <section id="tab-body" class="panel"></section>
-
-  <div id="drawer" class="overlay hidden">
-    <div class="sheet">
-      <div class="sheet-head"><h2 id="drawer-title"></h2><button class="btn small" data-close>Close</button></div>
-      <div id="drawer-body"></div>
+  <aside id="drawer" class="drawer hidden" aria-label="Connection details">
+    <div class="drawer-head">
+      <div>
+        <div id="drawer-title" class="drawer-title"></div>
+        <div id="drawer-sub" class="muted small"></div>
+      </div>
+      <button class="btn" data-close>Close</button>
     </div>
-  </div>
+    <div id="drawer-actions" class="actions"></div>
+    <div id="drawer-tabs" class="subnav"></div>
+    <div id="drawer-body"></div>
+  </aside>
 
-  <div id="add" class="overlay hidden">
-    <div class="sheet">
-      <div class="sheet-head"><h2>Add a source</h2>
-        <div class="row">
-          <div class="subtabs"><button class="btn small active" data-mode="form">Web form</button><button class="btn small" data-mode="yaml">YAML</button></div>
-          <label class="btn small" for="yaml-file">📄 Upload .yaml</label><input id="yaml-file" type="file" accept=".yaml,.yml" hidden>
-          <select id="example-pick"><option value="">Load example…</option></select>
-          <button class="btn small" data-close>Close</button></div></div>
+  <div id="add" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="add-title">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2 id="add-title">Add connector</h2>
+        <button class="btn" data-close>Close</button>
+      </div>
+      <div class="modal-tools">
+        <div class="seg"><button data-mode="form" class="on">Form</button><button data-mode="yaml">YAML</button></div>
+        <label class="btn" for="yaml-file">Upload file</label><input id="yaml-file" type="file" accept=".yaml,.yml" hidden>
+        <select id="example-pick"><option value="">Start from a template</option></select>
+      </div>
       <div id="mode-form"></div>
-      <div id="mode-yaml" class="hidden"><textarea id="yaml" spellcheck="false"></textarea></div>
-      <div class="row">
+      <div id="mode-yaml" class="hidden"><textarea id="yaml" spellcheck="false" aria-label="Connector YAML"></textarea></div>
+      <div class="actions">
         <button class="btn" id="btn-validate">Validate</button>
         <button class="btn" id="btn-test">Test connection</button>
-        <button class="btn" id="btn-preview">Dry-run preview</button>
-        <button class="btn primary" id="btn-save">Save &amp; start</button>
+        <button class="btn" id="btn-preview">Preview</button>
+        <button class="btn primary" id="btn-save">Save</button>
       </div>
       <div id="add-out"></div>
     </div>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>

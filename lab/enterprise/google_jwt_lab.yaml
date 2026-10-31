@@ -1,6 +1,6 @@
 # LAB — Google service-account JWT (RS256) -> access token -> pageToken paging (Security Command Center pattern).
 id: lab-google-scc
-name: "Lab: Google SCC-style findings (service account)"
+name: "Google SCC-style findings (service account)"
 source: gscc_lab
 entity: event
 schedule: {every: 30m}

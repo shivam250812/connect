@@ -1,6 +1,6 @@
 # LAB — Okta-compatible users API on the local mock (for failure drills: 429s, outage, poisoned next link).
 id: lab-okta-users
-name: "Lab: Okta users"
+name: "Okta users"
 description: Okta API shape on the local mock — rate-limits every 3rd call, some malformed users
 source: okta_lab
 entity: user

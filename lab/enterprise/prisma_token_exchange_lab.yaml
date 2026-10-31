@@ -1,6 +1,6 @@
 # LAB — token exchange (Prisma Cloud pattern): POST JSON credentials -> token in body -> custom header.
 id: lab-prisma-alerts
-name: "Lab: Prisma-style alerts (token exchange)"
+name: "Prisma-style alerts (token exchange)"
 source: prisma_lab
 entity: event
 schedule: {every: 5m}

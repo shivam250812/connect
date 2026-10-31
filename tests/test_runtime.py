@@ -1,5 +1,6 @@
 """FR-7..FR-11, B-1, B-3, B-4 and the PRD's failure drills, run against the lab sources in-process."""
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -155,3 +156,93 @@ async def test_remove_archives_config_and_reupload_restores(platform, tmp_path):
     platform.add(Path(archived).read_text())                                # upload it again -> back and running
     again = await platform.run("edr-upload")
     assert again["status"] == "ok" and again["new"] == 0                    # same rows, no duplicates
+
+
+async def test_edit_yaml_on_disk_then_reload(platform, tmp_path):
+    """Editing a connector file and clicking 'Reload configs' updates it live; a broken edit is reported, not loaded."""
+    text = (ROOT / "lab" / "edr_devices_lab.yaml").read_text().replace("id: lab-edr-devices", "id: edr-edit")
+    platform.add(text)                                    # saved into the connectors dir
+    path = platform.states["edr-edit"].path
+    assert "every: 2m" in platform.yaml_text("edr-edit")
+
+    path.write_text(text.replace("every: 2m", "every: 10m"))          # edit in VS Code
+    result = platform.reload_dir()
+    assert result["changed"] == ["edr-edit"] and platform.states["edr-edit"].spec.schedule.seconds == 600
+
+    path.write_text(text.replace("hostname: hostname", "hostnme: hostname"))   # a typo
+    result = platform.reload_dir()
+    assert path.name in result["errors"] and platform.states["edr-edit"].spec.schedule.seconds == 600  # old version keeps running
+
+
+# --- key rotation --------------------------------------------------------------------------------
+
+class _RotatingProvider:
+    """An API whose valid credential can be rotated; the old one stops working immediately."""
+
+    def __init__(self, key):
+        self.key, self.logins, self.rejected = key, 0, 0
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            self.logins += 1
+            if f"client_secret={self.key}" not in request.content.decode():
+                return httpx.Response(401, json={"error": "invalid_client"})
+            return httpx.Response(200, json={"access_token": "tok-" + self.key, "expires_in": 3600})
+        sent = request.headers.get("Authorization", "")
+        if sent not in (f"Bearer {self.key}", f"Bearer tok-{self.key}"):
+            self.rejected += 1
+            return httpx.Response(401, json={"message": "invalid key"})
+        return httpx.Response(200, json=[{"id": "1", "type": "t", "timestamp": "2026-10-31T00:00:00Z"}])
+
+
+_ROTATION_YAML = """
+id: rot
+name: rotation
+entity: event
+auth: {auth}
+request: {{base_url: "https://api.rot.example", path: /items}}
+mapping: {{id: id, type: type, timestamp: timestamp}}
+"""
+
+
+async def test_rotating_a_key_drops_the_old_login_token(tmp_path):
+    api = _RotatingProvider("old")
+    p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(api.handler))
+    p.vault.put("rot_secret", "old")
+    p.add(_ROTATION_YAML.format(auth="{type: oauth2_client_credentials, token_url: 'https://api.rot.example/oauth/token', "
+                                     "client_id: cid, secret: rot_secret, client_auth: body}"), persist=False)
+    assert (await p.run("rot"))["status"] == "ok" and api.logins == 1
+    api.key = "new"                                                         # rotated at the provider...
+    p.vault.put("rot_secret", "new")                                        # ...and saved here
+    assert p.secret_changed("rot_secret") == ["rot"]
+    run = await p.run("rot")
+    assert run["status"] == "ok" and api.logins == 2 and api.rejected == 0  # old token never used again
+
+
+async def test_key_rotated_in_secret_manager_is_picked_up_on_401(tmp_path):
+    from connectforge.secret_backends import CachedBackend, EnvBackend
+    api = _RotatingProvider("old")
+    p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(api.handler))
+    os.environ["CF_SECRET_ROT_KEY"] = "old"
+    try:
+        p.vault.backend = CachedBackend(EnvBackend(), ttl=300)
+        p.add(_ROTATION_YAML.format(auth="{type: bearer, secret: rot_key}"), persist=False)
+        assert (await p.run("rot"))["status"] == "ok"
+        api.key = os.environ["CF_SECRET_ROT_KEY"] = "new"                   # rotated in the manager; old revoked
+        run = await p.run("rot")                                            # cache still says "old" -> 401
+        assert run["status"] == "ok" and api.rejected == 1                  # dropped the cache, re-read, succeeded
+    finally:
+        os.environ.pop("CF_SECRET_ROT_KEY", None)
+
+
+async def test_key_rotated_from_another_process_is_used_and_not_overwritten(tmp_path):
+    from connectforge.vault import Vault
+    api = _RotatingProvider("old")
+    p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(api.handler))
+    p.vault.put("rot_key", "old")
+    p.add(_ROTATION_YAML.format(auth="{type: bearer, secret: rot_key}"), persist=False)
+    assert (await p.run("rot"))["status"] == "ok"
+    api.key = "new"
+    Vault(tmp_path / "vault.json", backend=None).put("rot_key", "new")    # what `cli set-secret` does
+    assert (await p.run("rot"))["status"] == "ok" and api.rejected == 0     # server picked it up at once
+    assert Vault(tmp_path / "vault.json", backend=None).get("rot_key", "rot", ["rot_key"]) == "new"  # not clobbered

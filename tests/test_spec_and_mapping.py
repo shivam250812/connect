@@ -106,3 +106,80 @@ mapping:
     assert "invalid embedded JSON" in map_record({**base, "detail": '{"ip'}, spec)[1]
     assert "out of range" in map_record({**base, "port": "70000"}, spec)[1]
     assert "missing required" in map_record({k: v for k, v in base.items() if k not in ("d", "t")}, spec)[1]
+
+
+# --- automatic mapping -----------------------------------------------------------------------------
+
+from connectforge.mapping import MappingError, find_records, infer_mapping, mapping_yaml  # noqa: E402
+
+
+def _froms(m):
+    return {k: (fm.from_ if fm.from_ is not None else ("const", fm.const)) for k, fm in m.items()}
+
+
+def test_auto_mapping_github_users():
+    recs = [{"login": f"user{i}", "id": 1000 + i, "type": "User", "site_admin": False,
+             "html_url": f"https://github.com/user{i}"} for i in range(5)]
+    assert _froms(infer_mapping("user", recs)) == {"id": "id", "name": "login"}
+
+
+def test_auto_mapping_nested_okta_style_users():
+    recs = [{"id": f"00u{i}", "status": "ACTIVE", "lastLogin": "2026-10-30T09:00:00.000Z",
+             "profile": {"login": f"u{i}@corp.com", "email": f"u{i}@corp.com", "firstName": "A",
+                         "displayName": f"User {i}", "title": "Analyst", "department": "SOC"}} for i in range(3)]
+    m = _froms(infer_mapping("user", recs))
+    assert m == {"id": "id", "name": "profile.displayName", "email": "profile.email", "status": "status",
+                 "last_login": "lastLogin", "title": "profile.title", "department": "profile.department"}
+
+
+def test_auto_mapping_elastic_alerts_with_dotted_keys():
+    recs = [{"_id": f"a{i}", "_source": {"@timestamp": "2026-10-31T10:00:00Z", "kibana.alert.rule.name": "Brute force",
+             "kibana.alert.severity": "high", "kibana.alert.reason": "5 failed logins", "kibana.alert.risk_score": 73,
+             "source.ip": "203.0.113.9", "destination.ip": "10.0.0.5", "user.name": "alice"}} for i in range(3)]
+    m = infer_mapping("event", recs)
+    f = _froms(m)
+    assert f["id"] == "_id" and f["timestamp"] == "_source.@timestamp"
+    assert f["severity"] == "_source['kibana.alert.severity']" and f["score"] == "_source['kibana.alert.risk_score']"
+    assert f["src_ip"] == "_source['source.ip']" and f["dst_ip"] == "_source['destination.ip']"
+    assert f["user"] == "_source['user.name']" and f["description"] == "_source['kibana.alert.reason']"
+    spec = parse_spec("id: elastic\nname: e\nentity: event\nrequest: {base_url: 'https://x.example'}\n")
+    row, err = map_record(recs[0], spec.model_copy(update={"mapping": m}))
+    assert err is None and row["src_ip"] == "203.0.113.9" and row["score"] == 73.0
+    assert "_source['kibana.alert.severity']" in mapping_yaml(m)
+
+
+def test_auto_mapping_cisa_kev_and_records_detection():
+    data = {"title": "CISA KEV", "count": 2, "vulnerabilities": [
+        {"cveID": "CVE-2024-0001", "vendorProject": "Acme", "product": "Widget", "vulnerabilityName": "Acme RCE",
+         "dateAdded": "2024-01-02", "shortDescription": "Remote code execution"},
+        {"cveID": "CVE-2024-0002", "vendorProject": "Acme", "product": "Gadget", "vulnerabilityName": "Acme SQLi",
+         "dateAdded": "2024-02-03", "shortDescription": "SQL injection"}]}
+    recs = find_records(data)
+    assert len(recs) == 2
+    f = _froms(infer_mapping("event", recs, default_type="cisa_kev"))
+    assert f["id"] == "cveID" and f["cve"] == "cveID" and f["timestamp"] == "dateAdded"
+    assert f["type"] == "vulnerabilityName" and f["description"] == "shortDescription" and f["product"] == "product"
+
+
+def test_auto_mapping_devices_and_value_checks():
+    recs = [{"id": f"d{i}", "hostname": f"LAPTOP-{i}", "ipv4Addresses": [f"10.0.0.{i}"], "os": {"name": "Windows 11"},
+             "lastSeenAt": "2026-10-31T08:00:00Z", "health": {"overall": "good"}, "time": "soon"} for i in range(3)]
+    f = _froms(infer_mapping("device", recs))
+    assert f["id"] == "id" and f["hostname"] == "hostname" and f["ip"] == "ipv4Addresses[0]"
+    assert f["os"] == "os.name" and f["last_seen"] == "lastSeenAt" and f["status"] == "health.overall"
+
+
+def test_auto_mapping_explains_what_is_missing():
+    with pytest.raises(MappingError, match="could not find hostname.*Fields in the data: colour"):
+        infer_mapping("device", [{"id": "1", "colour": "red"}, {"id": "2", "colour": "blue"}])
+    with pytest.raises(MappingError, match="could not find id"):                     # non-unique values are not ids
+        infer_mapping("event", [{"id": "same", "time": "2026-01-01"}, {"id": "same", "time": "2026-01-02"}])
+
+
+def test_mapping_can_be_left_out_or_auto_and_unknown_settings_are_named():
+    base = "id: src\nname: s\nentity: user\nrequest: {base_url: 'https://x.example'}\n"
+    assert parse_spec(base).mapping is None
+    assert parse_spec(base + "mapping:\n").mapping is None
+    assert parse_spec(base + "mapping: auto\n").mapping is None
+    with pytest.raises(SpecError, match="swaggerhub_logging: unknown setting"):
+        parse_spec(base + "swaggerhub_logging: {enabled: true}\n")

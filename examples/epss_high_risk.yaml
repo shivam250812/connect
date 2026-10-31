@@ -2,7 +2,7 @@
 # Which CVEs are most likely to be exploited in the next 30 days. Only those with EPSS > 0.9.
 # Login: none · Paging: offset (offset / limit, stops at `total`) · Entity: event
 id: epss-high-risk
-name: FIRST EPSS — likely-exploited CVEs
+name: FIRST EPSS likely-exploited CVEs
 description: CVEs with a >90% predicted chance of exploitation in the next 30 days
 source: epss
 entity: event
