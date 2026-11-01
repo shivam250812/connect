@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from connectforge.auth import cortex_advanced_headers, zscaler_obfuscated_key
-from connectforge.mapping import parse_cef, set_path, xml_to_dict, MappingError
-from connectforge.mock import enterprise as ent
-from connectforge.spec import SpecError, parse_spec
+from connectforge.config.schema import SpecError, parse_spec
+from connectforge.lab import enterprise as ent
+from connectforge.mapping import MappingError, parse_cef, set_path, xml_to_dict
+from connectforge.security.auth import cortex_advanced_headers, zscaler_obfuscated_key
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +51,7 @@ async def test_xml_source_and_bad_xml_record(platform):
 
 
 async def test_syslog_cef_and_regex_share_one_file(platform, tmp_path):
-    lines = [l for i in range(6) for l in ent.syslog_lines(i)] + ["<134>garbage line with CEF:0|broken"]
+    lines = [line for i in range(6) for line in ent.syslog_lines(i)] + ["<134>garbage line with CEF:0|broken"]
     (tmp_path / "feeds" / "syslog.log").write_text("\n".join(lines) + "\n")
     cp = await platform.run("lab-checkpoint-cef")
     jn = await platform.run("lab-juniper-srx")
@@ -63,7 +63,7 @@ async def test_syslog_cef_and_regex_share_one_file(platform, tmp_path):
 
 
 async def test_syslog_receiver_writes_lines(tmp_path):
-    from connectforge.syslog import start_syslog
+    from connectforge.engine.syslog import start_syslog
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -136,7 +136,7 @@ def test_wildcard_hosts():
 
 
 def test_catalog_configs_all_validate():
-    files = sorted((ROOT / "catalog").rglob("*.yaml"))
+    files = sorted((ROOT / "integrations" / "catalog").rglob("*.yaml"))
     assert len(files) >= 34
     for f in files:
         parse_spec(f.read_text())
@@ -146,9 +146,9 @@ async def test_catalog_nested_cursor_lands_in_body():
     """AWS Security Hub's incremental window must be written at Filters.UpdatedAt[0].Start/End in the POST body."""
     from datetime import datetime, timezone
 
-    from connectforge.runtime import RunMetrics, fetch_pages
+    from connectforge.engine import RunMetrics, fetch_pages
 
-    spec = parse_spec((ROOT / "catalog" / "cloud" / "aws_security_hub.yaml").read_text())
+    spec = parse_spec((ROOT / "integrations" / "catalog" / "cloud" / "aws_security_hub.yaml").read_text())
     seen = []
 
     class FakeFetcher:
@@ -164,13 +164,13 @@ async def test_catalog_nested_cursor_lands_in_body():
     window = seen[0]["Filters"]["UpdatedAt"][0]
     assert window["Start"] == "2026-10-30T00:00:00.000Z" and window["End"].endswith("Z")
     assert seen[0]["MaxResults"] == 100
-    assert parse_spec((ROOT / "catalog" / "cloud" / "aws_security_hub.yaml").read_text()).request.body["Filters"]["UpdatedAt"][0]["Start"] == ""  # spec untouched
+    assert parse_spec((ROOT / "integrations" / "catalog" / "cloud" / "aws_security_hub.yaml").read_text()).request.body["Filters"]["UpdatedAt"][0]["Start"] == ""  # spec untouched
 
 
 def test_catalog_cef_mapping_on_a_real_style_line():
     from connectforge.mapping import map_record
 
-    spec = parse_spec((ROOT / "catalog" / "firewall" / "check_point.yaml").read_text())
+    spec = parse_spec((ROOT / "integrations" / "catalog" / "firewall" / "check_point.yaml").read_text())
     line = ("<134>Oct 31 07:00:00 cp-gw01 CEF:0|Check Point|VPN-1 & FireWall-1|R81.20|Drop|Drop|7|rt=1793433600000 "
             "src=203.0.113.45 dst=10.0.2.11 dpt=3389 act=Drop suser=svc_backup msg=blocked by rule 12")
     row, err = map_record(parse_cef(line), spec)

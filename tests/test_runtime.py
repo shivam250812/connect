@@ -6,8 +6,8 @@ from pathlib import Path
 
 import httpx
 
-from connectforge.mock import sources as mock
-from connectforge.runtime import Platform
+from connectforge.engine import Platform
+from connectforge.lab import sources as mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -118,7 +118,7 @@ mapping:
   type: {const: user_snapshot}
   timestamp: created
   description: {template: "{profile.login} is {status}"}
-""", persist=False)
+""", persist=False)[0]
     run = await platform.run(spec.id)
     assert run["status"] == "ok" and run["new"] > 100
     sources = {r["source"] for r in platform.store.records("event", limit=1000)}
@@ -132,20 +132,20 @@ async def test_missing_secret_is_clear(platform):
 
 
 async def test_file_path_outside_feed_dir_refused(platform):
-    text = (ROOT / "lab" / "fortigate_lab.yaml").read_text().replace("data/feeds/fortigate.log", "/etc/hosts")
+    text = (ROOT / "integrations" / "lab" / "fortigate_lab.yaml").read_text().replace("data/feeds/fortigate.log", "/etc/hosts")
     platform.add(text.replace("id: lab-fortigate", "id: sneaky"), persist=False)
     run = await platform.run("sneaky")
     assert run["status"] == "error" and "outside permitted feed directories" in run["error"]
 
 
 def test_platform_loads_multiple_dirs(tmp_path):
-    p = Platform(ROOT / "connectors", tmp_path)
-    p.load_dir([ROOT / "lab"])
-    assert {"github-advisories", "nvd-cves", "cisa-kev", "lab-okta-users"} <= set(p.states)
+    p = Platform(ROOT / "integrations" / "connectors", tmp_path)
+    p.load_dir([ROOT / "integrations" / "lab"])
+    assert {"github.advisories", "nvd.cves", "nvd.history", "cisa.kev", "lab-okta-users"} <= set(p.states)
 
 
 async def test_remove_archives_config_and_reupload_restores(platform, tmp_path):
-    text = (ROOT / "lab" / "edr_devices_lab.yaml").read_text().replace("id: lab-edr-devices", "id: edr-upload")
+    text = (ROOT / "integrations" / "lab" / "edr_devices_lab.yaml").read_text().replace("id: lab-edr-devices", "id: edr-upload")
     platform.add(text)                                                     # like uploading a .yaml in the UI
     saved = platform.states["edr-upload"].path
     assert saved.exists() and (await platform.run("edr-upload"))["status"] == "ok"
@@ -160,7 +160,7 @@ async def test_remove_archives_config_and_reupload_restores(platform, tmp_path):
 
 async def test_edit_yaml_on_disk_then_reload(platform, tmp_path):
     """Editing a connector file and clicking 'Reload configs' updates it live; a broken edit is reported, not loaded."""
-    text = (ROOT / "lab" / "edr_devices_lab.yaml").read_text().replace("id: lab-edr-devices", "id: edr-edit")
+    text = (ROOT / "integrations" / "lab" / "edr_devices_lab.yaml").read_text().replace("id: lab-edr-devices", "id: edr-edit")
     platform.add(text)                                    # saved into the connectors dir
     path = platform.states["edr-edit"].path
     assert "every: 2m" in platform.yaml_text("edr-edit")
@@ -220,7 +220,7 @@ async def test_rotating_a_key_drops_the_old_login_token(tmp_path):
 
 
 async def test_key_rotated_in_secret_manager_is_picked_up_on_401(tmp_path):
-    from connectforge.secret_backends import CachedBackend, EnvBackend
+    from connectforge.security.secret_backends import CachedBackend, EnvBackend
     api = _RotatingProvider("old")
     p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(api.handler))
     os.environ["CF_SECRET_ROT_KEY"] = "old"
@@ -236,7 +236,7 @@ async def test_key_rotated_in_secret_manager_is_picked_up_on_401(tmp_path):
 
 
 async def test_key_rotated_from_another_process_is_used_and_not_overwritten(tmp_path):
-    from connectforge.vault import Vault
+    from connectforge.security.vault import Vault
     api = _RotatingProvider("old")
     p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(api.handler))
     p.vault.put("rot_key", "old")
@@ -246,3 +246,19 @@ async def test_key_rotated_from_another_process_is_used_and_not_overwritten(tmp_
     Vault(tmp_path / "vault.json", backend=None).put("rot_key", "new")    # what `cli set-secret` does
     assert (await p.run("rot"))["status"] == "ok" and api.rejected == 0     # server picked it up at once
     assert Vault(tmp_path / "vault.json", backend=None).get("rot_key", "rot", ["rot_key"]) == "new"  # not clobbered
+
+
+async def test_restart_resumes_schedule_and_status_instead_of_rerunning(tmp_path):
+    """A restart must not run every connection at once (vendor quotas): it waits out the interval."""
+    import time as _t
+
+    def ok(request):
+        return httpx.Response(200, json=[{"id": "1", "type": "t", "timestamp": "2026-11-01T00:00:00Z"}])
+    p = Platform(tmp_path / "c", tmp_path, transport=httpx.MockTransport(ok))
+    p.add("id: quota\nname: Quota\nentity: event\nschedule: {every: 1d}\nrequest: {base_url: 'https://api.q.example', path: /a}\n")
+    assert (await p.run("quota"))["status"] == "ok"
+    again = Platform(tmp_path / "c", tmp_path)
+    again.load_dir()
+    st = again.states["quota"]
+    assert st.last_run["status"] == "ok" and st.last_success_at and again.health("quota")["status"] == "healthy"
+    assert st.next_run - _t.monotonic() > 86000                       # not due again for about a day

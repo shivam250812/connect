@@ -1,0 +1,43 @@
+# GitHub (real API) -> events, users and records. One token (Secrets tab: github_token).
+# Login: Bearer token · Paging: Link header
+id: github
+name: GitHub
+source: github
+auth: {type: bearer, secret: github_token}
+request:
+  base_url: https://api.github.com
+  headers: {Accept: application/vnd.github+json, X-GitHub-Api-Version: "2022-11-28"}
+pagination: {type: link_header, page_size_param: per_page, page_size: 100, max_pages: 3}
+rate_limit: {requests_per_second: 1, burst: 2}
+schedule: {every: 1h}
+endpoints:
+  - name: advisories
+    title: Security advisories
+    description: Reviewed security advisories across open-source ecosystems
+    entity: event
+    path: /advisories
+    params: {type: reviewed, sort: updated, direction: desc}
+    schedule: {every: 15m}
+    mapping:
+      id: ghsa_id
+      type: {const: advisory}
+      severity: {from: severity, lower: true, default: unknown}
+      score: cvss.score
+      timestamp: published_at
+      description: summary
+      cve: cve_id
+      product: "vulnerabilities[0].package.name"
+      url: html_url
+
+  - name: users
+    title: Users
+    entity: user
+    path: /users
+    pagination: {type: link_header, page_size_param: per_page, page_size: 50, max_pages: 2}
+
+  - name: repos
+    title: My repositories
+    entity: record
+    path: /user/repos
+    params: {sort: updated}
+    columns: [id, title, visibility, language, stargazers_count, open_issues_count, html_url, timestamp]

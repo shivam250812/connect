@@ -1,0 +1,53 @@
+# Google Cloud Audit Logs — real security events, API calls, and access logs.
+# Works on any standard Google Cloud project (NO Organization required).
+# Login: service-account JSON key -> signed RS256 JWT -> access token · Paging: pageToken
+id: google-cloud-audit
+name: Google Cloud Audit Logs
+source: google_cloud
+allowed_hosts:
+- logging.googleapis.com
+- oauth2.googleapis.com
+auth:
+  type: google_service_account
+  secret: gcp_service_account_json
+  scope: https://www.googleapis.com/auth/cloud-platform
+request:
+  base_url: https://logging.googleapis.com
+endpoints:
+- name: entries-list
+  title: Google Cloud Audit Logs
+  entity: event
+  path: /v2/entries:list
+  method: POST
+  body:
+    resourceNames:
+    - projects/YOUR-PROJECT-ID
+    pageSize: 100
+    orderBy: timestamp desc
+  records: entries
+  pagination:
+    type: next_token
+    params_in: body
+    token_path: nextPageToken
+    token_param: pageToken
+  mapping:
+    id: insertId
+    type:
+      from: protoPayload.@type
+      default: gcp_audit_log
+    severity:
+      from: severity
+      lower: true
+      default: info
+    timestamp: timestamp
+    description:
+      from: protoPayload.methodName
+      default: GCP API Call
+    user:
+      from: protoPayload.authenticationInfo.principalEmail
+      default: ''
+    src_ip:
+      from: protoPayload.requestMetadata.callerIp
+      default: ''
+  schedule:
+    every: 15m

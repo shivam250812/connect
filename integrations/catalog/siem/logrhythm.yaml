@@ -1,0 +1,40 @@
+# LogRhythm SIEM — alarms via the Alarm API.
+# Login: Bearer API token (Client Console > Third Party Applications) · Paging: offset / count
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: logrhythm-alarms
+name: LogRhythm alarms
+source: logrhythm
+auth:
+  type: bearer
+  secret: logrhythm_token
+request:
+  base_url: https://logrhythm-api.example.com:8501
+endpoints:
+- name: alarms
+  title: LogRhythm alarms
+  entity: event
+  path: /lr-alarm-api/alarms
+  params:
+    orderby: DateInserted
+    dir: descending
+  records: alarmsSearchDetails
+  pagination:
+    type: offset
+    offset_param: offset
+    page_size_param: count
+    page_size: 100
+  mapping:
+    id:
+      from: alarmId
+      type: str
+    type: alarmRuleName
+    severity:
+      from: rbpMax
+      type: str
+    timestamp: dateInserted
+    description:
+      template: '{alarmRuleName} on {entityName} ({alarmStatus})'
+    outcome: alarmStatus
+  schedule:
+    every: 5m

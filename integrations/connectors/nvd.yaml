@@ -1,0 +1,48 @@
+# NIST NVD (real API, free) -> events and records
+# Login: optional API key in the `apiKey` header (works without one at 5 requests / 30 s; a free key from
+# nvd.nist.gov/developers raises it to 50 / 30 s) · Paging: offset (startIndex) · Incremental by date
+id: nvd
+name: NIST NVD
+source: nvd
+auth: {type: api_key, header: apiKey, secret: nvd_api_key, optional: true}
+request:
+  base_url: https://services.nvd.nist.gov
+  timeout_seconds: 60
+rate_limit: {requests_per_second: 0.08, burst: 2}   # two endpoints share NVD's 5 requests / 30 s
+retry: {max_attempts: 4, base_delay_seconds: 6}
+endpoints:
+  - name: cves
+    title: CVEs added or changed
+    entity: event
+    path: /rest/json/cves/2.0
+    schedule: {every: 2h}
+    pagination: {type: offset, offset_param: startIndex, page_size_param: resultsPerPage, page_size: 200, total_path: totalResults, max_pages: 5}
+    cursor: {field: cve.lastModified, param: lastModStartDate, end_param: lastModEndDate, initial: -6h, format: iso_z}
+    records: vulnerabilities
+    mapping:
+      id: cve.id
+      type: {const: cve}
+      severity: {from: "cve.metrics.cvssMetricV31[0].cvssData.baseSeverity", lower: true, default: unknown}
+      score: "cve.metrics.cvssMetricV31[0].cvssData.baseScore"
+      timestamp: cve.published
+      description: "cve.descriptions[0].value"
+      cve: cve.id
+      url: {template: "https://nvd.nist.gov/vuln/detail/{cve.id}"}
+
+  - name: history
+    title: CVE change history
+    description: What changed on each CVE (new CVSS score, references, rejected...), and by whom
+    entity: record
+    path: /rest/json/cvehistory/2.0
+    schedule: {every: 6h}
+    pagination: {type: offset, offset_param: startIndex, page_size_param: resultsPerPage, page_size: 500, total_path: totalResults, max_pages: 4}
+    cursor: {field: change.created, param: changeStartDate, end_param: changeEndDate, initial: -1d, format: iso_z}
+    records: cveChanges
+    mapping:
+      id: change.cveChangeId
+      title: {template: "{change.cveId}: {change.eventName}"}
+      timestamp: change.created
+      cve: change.cveId
+      event: change.eventName
+      changed_by: change.sourceIdentifier
+    columns: [id, title, event, changed_by, timestamp]

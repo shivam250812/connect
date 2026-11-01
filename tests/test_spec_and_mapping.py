@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from connectforge.config.schema import SpecError, parse_spec, parse_specs, parse_specs_with_fixes
 from connectforge.mapping import get_path, map_record
-from connectforge.spec import SpecError, parse_spec
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,7 +35,7 @@ def test_prd_example_config_is_valid():
 
 
 def test_real_sources_differ_in_login_and_paging():
-    specs = [parse_spec(p.read_text()) for p in sorted((ROOT / "connectors").glob("*.yaml"))]
+    specs = [s for p in sorted((ROOT / "integrations" / "connectors").glob("*.yaml")) for s in parse_specs(p.read_text())]
     assert len(specs) >= 3
     assert len({s.auth.type for s in specs}) >= 3          # none / api_key / bearer
     assert len({s.pagination.type for s in specs}) >= 3    # none / offset / link_header
@@ -44,12 +44,12 @@ def test_real_sources_differ_in_login_and_paging():
 
 @pytest.mark.parametrize("folder", ["connectors", "examples", "lab"])
 def test_every_shipped_config_validates(folder):
-    for path in (ROOT / folder).glob("*.yaml"):
-        parse_spec(path.read_text())
+    for path in (ROOT / "integrations" / folder).glob("*.yaml"):
+        assert parse_specs(path.read_text())
 
 
 @pytest.mark.parametrize("patch, message", [
-    (("secret: okta_key }", 'value: "sk_live_51HxAbCdEf" }'), "must come from the vault"),
+    (("secret: okta_key }", 'value: "sk_live_51HxAbCdEf" }'), "written in plain text"),
     (("email: profile.login", "mail: profile.login"), "unknown user field(s) ['mail']"),
     (("  id: id\n", ""), "required user field(s) ['id']"),
     (('request: {base_url: "https://acme.okta.com"', 'allowed_hosts: [other.example]\nrequest: {base_url: "https://acme.okta.com"'),
@@ -181,5 +181,7 @@ def test_mapping_can_be_left_out_or_auto_and_unknown_settings_are_named():
     assert parse_spec(base).mapping is None
     assert parse_spec(base + "mapping:\n").mapping is None
     assert parse_spec(base + "mapping: auto\n").mapping is None
-    with pytest.raises(SpecError, match="swaggerhub_logging: unknown setting"):
-        parse_spec(base + "swaggerhub_logging: {enabled: true}\n")
+    specs, fixes = parse_specs_with_fixes(base + "swaggerhub_logging: {enabled: true}\n")  # metadata: dropped, said so
+    assert specs[0].id == "src" and "ignored `swaggerhub_logging` (not used by ConnectForge)" in fixes
+    with pytest.raises(SpecError, match="schedual: unknown setting, not part of the connector format \\(did you mean 'schedule'\\?\\)"):
+        parse_spec(base + "schedual: {every: 1h}\n")

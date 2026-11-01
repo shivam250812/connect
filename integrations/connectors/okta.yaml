@@ -1,0 +1,54 @@
+# Okta (real API) -> users, events and records. One API token (Secrets tab: okta_token).
+# Login: SSWS token · Paging: Link header
+id: okta
+name: Okta
+source: okta
+auth: {type: bearer, scheme: SSWS, secret: okta_token}
+request:
+  base_url: https://trial-7339118.okta.com   # replace with your Okta domain
+pagination: {type: link_header, page_size_param: limit, page_size: 200}
+endpoints:
+  - name: users
+    title: Users
+    entity: user
+    path: /api/v1/users
+    schedule: {every: 15m}
+    mapping:
+      id: id
+      name: {template: "{profile.firstName} {profile.lastName}"}
+      email: profile.login
+      status: {from: status, lower: true}
+      last_login: lastLogin
+      title: profile.title
+      department: profile.department
+
+  - name: logs
+    title: System log
+    description: Sign-ins, MFA, password resets, admin changes
+    entity: event
+    path: /api/v1/logs
+    schedule: {every: 5m}
+    pagination: {type: link_header, page_size_param: limit, page_size: 500, max_pages: 10}
+    cursor: {field: published, param: since, initial: -1d, format: iso_z}
+    mapping:
+      id: uuid
+      type: eventType
+      severity: {from: severity, lower: true, default: info}
+      timestamp: published
+      description: {from: displayMessage, default: "Okta event"}
+      user: actor.alternateId
+      src_ip: client.ipAddress
+      outcome: {from: outcome.result, lower: true}
+      country: client.geographicalContext.country
+
+  - name: groups
+    title: Groups
+    entity: record
+    path: /api/v1/groups
+    schedule: {every: 6h}
+    mapping:
+      id: id
+      title: profile.name
+      timestamp: lastMembershipUpdated
+      type: type
+      description: profile.description

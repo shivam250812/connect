@@ -1,0 +1,55 @@
+# Elastic Security (Elastic Cloud) -> events and users. One API key (Secrets tab: elastic_api_key).
+# Login: API key (Authorization: ApiKey <encoded key>) · read straight from Elasticsearch
+id: elastic
+name: Elastic Security
+source: elastic
+auth: {type: bearer, scheme: ApiKey, secret: elastic_api_key}
+request:
+  base_url: https://79418407e6e44b9e8d5d0d55f4889dba.us-central1.gcp.cloud.es.io:443
+rate_limit: {requests_per_second: 2, burst: 2}
+endpoints:
+  - name: alerts
+    title: Detection alerts
+    description: Detection alerts raised by Elastic Security rules
+    entity: event
+    path: /.alerts-security.alerts-default/_search
+    method: POST
+    params: {ignore_unavailable: "true"}   # no alerts yet -> empty result instead of index_not_found
+    body:
+      sort: [{"@timestamp": {order: asc}}]
+      query: {range: {"@timestamp": {gte: "now-1d"}}}
+    schedule: {every: 5m}
+    pagination: {type: offset, params_in: body, offset_param: from, page_size_param: size, page_size: 100, total_path: hits.total.value, max_pages: 50}
+    cursor: {field: "_source['@timestamp']", param: "query.range.@timestamp.gte", in: body, initial: -1d}
+    records: hits.hits
+    mapping:
+      id: _id
+      type: "_source['kibana.alert.rule.name']"
+      severity: {from: "_source['kibana.alert.severity']", lower: true}
+      timestamp: "_source['@timestamp']"
+      description: {from: "_source['kibana.alert.reason']", default: "Elastic alert"}
+      score: "_source['kibana.alert.risk_score']"
+      user: "_source['user.name']"
+      src_ip: "_source['source.ip']"
+      dst_ip: "_source['destination.ip']"
+      dst_port: "_source['destination.port']"
+      action: "_source['event.action']"
+      outcome: "_source['event.outcome']"
+      product: {const: Elastic Security}
+
+  - name: users
+    title: Users
+    description: Native Elasticsearch / Kibana users and their roles
+    entity: user
+    path: /_security/_query/user
+    method: POST
+    body: {}
+    schedule: {every: 6h}
+    pagination: {type: offset, params_in: body, offset_param: from, page_size_param: size, page_size: 100, total_path: total, max_pages: 10}
+    records: users
+    mapping:
+      id: username
+      name: username
+      email: email
+      title: "roles[0]"
+      status: {from: enabled, map: {"True": active, "False": disabled}}

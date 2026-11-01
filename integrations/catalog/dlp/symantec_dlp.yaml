@@ -1,0 +1,54 @@
+# Symantec DLP (Enforce) — incidents via REST v2.
+# Login: Basic auth · Paging: page number INSIDE the POST body (page.pageNumber / page.pageSize)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: symantec-dlp
+name: Symantec DLP incidents
+source: symantec_dlp
+auth:
+  type: basic
+  username: dlp-api-user
+  secret: symantec_dlp_password
+request:
+  base_url: https://enforce.example.com
+endpoints:
+- name: incidents
+  title: Symantec DLP incidents
+  entity: event
+  path: /ProtectManager/webservices/v2/incidents
+  method: POST
+  body:
+    select:
+    - name: incidentId
+    - name: creationDate
+    - name: policyName
+    - name: severityId
+    - name: messageSource
+    page:
+      type: offset
+  records: incidents
+  pagination:
+    type: page_number
+    params_in: body
+    page_param: page.pageNumber
+    page_size_param: page.pageSize
+    page_size: 100
+  mapping:
+    id:
+      from: incidentId
+      type: str
+    type:
+      template: dlp_{policyName}
+    severity:
+      from: severityId
+      map:
+        '1': high
+        '2': medium
+        '3': low
+        '4': info
+      map_default: medium
+    timestamp: creationDate
+    description:
+      template: '{policyName} via {messageSource}'
+  schedule:
+    every: 15m

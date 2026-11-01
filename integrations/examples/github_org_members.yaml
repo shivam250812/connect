@@ -1,0 +1,48 @@
+# GitHub organization members -> the USERS table (real API, a free org works).
+# Login: Bearer token · Paging: Link header · Entity: user
+#
+# Before uploading:
+#   1. Replace YOUR-ORG in the path with your organization's name (github.com/YOUR-ORG).
+#   2. The github_token secret needs the read:org scope (classic token), or, for a fine-grained token,
+#      resource owner = the org with "Members: Read-only". Without it only *public* members are returned.
+id: github-org-members
+name: GitHub organization members
+source: github_org
+auth:
+  type: bearer
+  secret: github_token
+request:
+  base_url: https://api.github.com
+  headers:
+    Accept: application/vnd.github+json
+    X-GitHub-Api-Version: '2022-11-28'
+rate_limit:
+  requests_per_second: 1
+  burst: 2
+endpoints:
+- name: members
+  title: GitHub organization members
+  entity: user
+  path: /orgs/YOUR-ORG/members
+  pagination:
+    type: link_header
+    page_size_param: per_page
+    page_size: 100
+    max_pages: 20
+  mapping:
+    id:
+      from: id
+      type: str
+    name: login
+    status:
+      const: active
+    title:
+      from: site_admin
+      map:
+        'True': github_staff
+        'False': member
+    department:
+      const: YOUR-ORG
+  description: Everyone in the GitHub organization, as a company user directory
+  schedule:
+    every: 1h

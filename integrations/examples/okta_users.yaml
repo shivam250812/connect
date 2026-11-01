@@ -1,0 +1,33 @@
+# Okta (Integrator Free Plan) — users. Set your org URL, then the `okta_token` secret (Admin > Security > API > Tokens).
+# Login: API token in header (SSWS) · Paging: Link header with cursor · -> users
+id: okta-users
+name: Okta users
+source: okta
+auth:
+  type: bearer
+  scheme: SSWS
+  secret: okta_token
+request:
+  base_url: https://your-org.okta.com
+endpoints:
+- name: users
+  title: Okta users
+  entity: user
+  path: /api/v1/users
+  pagination:
+    type: link_header
+    page_size_param: limit
+    page_size: 200
+  mapping:
+    id: id
+    name:
+      template: '{profile.firstName} {profile.lastName}'
+    email: profile.login
+    status:
+      from: status
+      lower: true
+    last_login: lastLogin
+    title: profile.title
+    department: profile.department
+  schedule:
+    every: 15m

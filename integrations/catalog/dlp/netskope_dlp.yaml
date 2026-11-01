@@ -1,0 +1,46 @@
+# Netskope (DLP alerts) — REST API v2.
+# Login: API token header (Netskope-Api-Token) · Paging: offset · Incremental: starttime (epoch)
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: netskope-dlp
+name: Netskope DLP alerts
+source: netskope
+auth:
+  type: api_key
+  header: Netskope-Api-Token
+  secret: netskope_token
+request:
+  base_url: https://yourtenant.goskope.com
+endpoints:
+- name: alert
+  title: Netskope DLP alerts
+  entity: event
+  path: /api/v2/events/data/alert
+  params:
+    query: alert_type eq DLP
+  records: result
+  pagination:
+    type: offset
+    offset_param: offset
+    page_size_param: limit
+    page_size: 1000
+  cursor:
+    field: timestamp
+    param: starttime
+    format: epoch
+    initial: -1d
+  mapping:
+    id: _id
+    type:
+      template: dlp_{alert_name}
+    severity:
+      from: dlp_rule_severity
+      lower: true
+      default: medium
+    timestamp: timestamp
+    description:
+      template: '{alert_name}: {app} {activity}'
+    user: user
+    src_ip: srcip
+  schedule:
+    every: 10m

@@ -1,0 +1,49 @@
+# Prisma Cloud (CSPM) — alerts.
+# Login: POST /login with access key + secret -> JWT -> header x-redlock-auth · Paging: nextPageToken
+# Use your stack's host (api.prismacloud.io, api2.prismacloud.io, api.eu.prismacloud.io, ...).
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: prisma-cloud
+name: Prisma Cloud alerts
+source: prisma
+auth:
+  type: token_exchange
+  header: x-redlock-auth
+  scheme: ''
+  login:
+    url: https://api.prismacloud.io/login
+    json:
+      username: ${secret:prisma_access_key_id}
+      password: ${secret:prisma_secret_key}
+    token_path: token
+    ttl_seconds: 540
+request:
+  base_url: https://api.prismacloud.io
+endpoints:
+- name: alert
+  title: Prisma Cloud alerts
+  entity: event
+  path: /v2/alert
+  params:
+    timeType: relative
+    timeAmount: 24
+    timeUnit: hour
+    detailed: 'true'
+  records: items
+  pagination:
+    type: next_token
+    token_path: nextPageToken
+    token_param: pageToken
+    page_size_param: limit
+    page_size: 100
+  mapping:
+    id: id
+    type:
+      template: cspm_{policy.name}
+    severity: policy.severity
+    timestamp: alertTime
+    description:
+      template: '{policy.name} on {resource.cloudType} {resource.name}'
+    outcome: status
+  schedule:
+    every: 15m

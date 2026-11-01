@@ -1,16 +1,15 @@
 import os
-import sys
 from pathlib import Path
 
 import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 os.environ["CF_SCHEDULER"] = "0"
+os.environ.setdefault("CF_AUTH", "off")  # API tests act as a logged-in user; test_accounts.py turns it on
 
-from connectforge.mock import sources as mock  # noqa: E402
-from connectforge.runtime import Platform  # noqa: E402
+from connectforge.engine import Platform  # noqa: E402
+from connectforge.lab import sources as mock  # noqa: E402
 
 
 class FakeSleep:
@@ -59,7 +58,7 @@ def platform(tmp_path, sleep, webhook, monkeypatch):
     feeds.mkdir()
     p = Platform(tmp_path / "connectors", tmp_path, transport=httpx.ASGITransport(app=mock.app), sleep=sleep,
                  file_roots=[feeds], alert_transport=httpx.MockTransport(webhook.handler))
-    from connectforge.mock import enterprise as ent
+    from connectforge.lab import enterprise as ent
 
     for name, value in {"okta_lab_token": mock.OKTA_TOKEN, "edr_api_key": mock.EDR_KEY,
                         "aws_access_key_id": mock.AWS_KEY_ID, "aws_secret_access_key": mock.AWS_SECRET,
@@ -69,7 +68,7 @@ def platform(tmp_path, sleep, webhook, monkeypatch):
                         "google_lab_service_account": ent.GOOGLE_KEY_JSON, "cortex_lab_key": ent.CORTEX_KEY,
                         "xmlfw_lab_password": "lab-fw-pass"}.items():
         p.vault.put(name, value, actor="test")
-    for f in sorted((ROOT / "lab").glob("*.yaml")) + sorted((ROOT / "lab" / "enterprise").glob("*.yaml")):
+    for f in sorted((ROOT / "integrations" / "lab").glob("*.yaml")) + sorted((ROOT / "integrations" / "lab" / "enterprise").glob("*.yaml")):
         text = f.read_text().replace("data/feeds/fortigate.log", str(feeds / "fortigate.log")) \
             .replace("data/feeds/syslog.log", str(feeds / "syslog.log"))
         p.add(text, actor="test", persist=False)

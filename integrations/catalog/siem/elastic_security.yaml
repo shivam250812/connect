@@ -1,0 +1,53 @@
+# Elastic Security — detection alerts via the Kibana detection-engine API.
+# Login: API key (Authorization: ApiKey <base64 id:key>) · Paging: from/size offset in the BODY · Incremental: @timestamp range
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: elastic-security
+name: Elastic Security alerts
+source: elastic
+auth:
+  type: bearer
+  scheme: ApiKey
+  secret: elastic_api_key
+request:
+  base_url: https://your-kibana.example.com:5601
+  headers:
+    kbn-xsrf: 'true'
+endpoints:
+- name: search
+  title: Elastic Security alerts
+  entity: event
+  path: /api/detection_engine/signals/search
+  method: POST
+  body:
+    sort:
+    - '@timestamp':
+        order: asc
+    query:
+      range:
+        '@timestamp':
+          gte: now-1d
+  records: hits.hits
+  pagination:
+    type: offset
+    params_in: body
+    offset_param: from
+    page_size_param: size
+    page_size: 100
+    total_path: hits.total.value
+    max_pages: 50
+  cursor:
+    field: _source['@timestamp']
+    param: query.range.@timestamp.gte
+    in: body
+    initial: -1d
+  mapping:
+    id: _id
+    type: _source['kibana.alert.rule.name']
+    severity: _source['kibana.alert.severity']
+    timestamp: _source['@timestamp']
+    description: _source['kibana.alert.reason']
+    user: _source['user.name']
+    src_ip: _source['source.ip']
+  schedule:
+    every: 5m

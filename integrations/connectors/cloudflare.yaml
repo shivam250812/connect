@@ -1,0 +1,63 @@
+# Cloudflare (real API) -> events, users and records. One API token (Secrets tab: cloudflare_token).
+# Login: Bearer token · Paging: page number. Account ID below is not secret.
+id: cloudflare
+name: Cloudflare
+source: cloudflare
+auth: {type: bearer, secret: cloudflare_token}
+request:
+  base_url: https://api.cloudflare.com/client/v4
+rate_limit: {requests_per_second: 2, burst: 4}     # Cloudflare allows ~1200 requests / 5 min
+pagination: {type: page_number, page_param: page, page_size_param: per_page, page_size: 50, max_pages: 10}
+endpoints:
+  - name: audit
+    title: Audit logs
+    description: Account and zone configuration changes, logins and token activity
+    entity: event
+    path: /accounts/9fa229356cc4b3e66c879aa7ec3aa963/audit_logs
+    params: {direction: desc}
+    schedule: {every: 15m}
+    cursor: {field: when, param: since, initial: -7d, format: iso_z}
+    records: result
+    mapping:
+      id: id
+      type: {template: "cloudflare_{action.type}"}
+      action: action.type
+      outcome: {from: action.result, map: {"True": success, "False": failure}, map_default: unknown}
+      severity: {from: action.type, map: {login: low, delete: high, purge: medium, rotate: medium}, map_default: info}
+      timestamp: when
+      user: actor.email
+      src_ip: actor.ip
+      description: {template: "{actor.email} {action.type} {resource.type} {resource.id}"}
+      product: {template: "cloudflare {interface}"}
+
+  - name: members
+    title: Account members
+    description: Who can sign in to the Cloudflare account, their role and whether 2FA is on
+    entity: user
+    path: /accounts/9fa229356cc4b3e66c879aa7ec3aa963/members
+    schedule: {every: 6h}
+    records: result
+    mapping:
+      id: id
+      name: {from: user.email}
+      email: user.email
+      status: status
+      title: "roles[0].name"
+      mfa_enabled: user.two_factor_authentication_enabled
+
+  - name: zones
+    title: Zones (domains)
+    description: Domains on the account, their status, plan and name servers
+    entity: record
+    path: /zones
+    params: {account.id: 9fa229356cc4b3e66c879aa7ec3aa963}
+    schedule: {every: 1d}
+    records: result
+    mapping:
+      id: id
+      title: name
+      timestamp: modified_on
+      status: status
+      plan: plan.name
+      paused: paused
+      name_server: "name_servers[0]"

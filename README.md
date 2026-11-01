@@ -1,202 +1,189 @@
-# ConnectForge: config-driven security integration platform
+# ConnectForge
 
-**CyberForge 2026, Problem 05.** In ConnectForge, connecting a new data source (a firewall, a login system, a cloud console) means writing a config file, not new code. The platform does the rest the same way for every connector: it stores secrets safely, retries failures, respects rate limits, quarantines bad data and shows the health of every connection.
+**Config-driven security integration platform** · CyberForge 2026, Problem 05
 
-![Health page](docs/health.png)
+Connecting a new data source (a firewall, an EDR, an identity provider, a cloud console) is a YAML file, not new
+code. The platform does the rest the same way for every source: logs in, pages, retries, respects rate limits,
+maps records into one common schema, quarantines bad data, keeps secrets safe, shows health, and tells people on
+Slack or email when something needs them.
 
-## Proven with real free-tier APIs (Goal 6, §4)
+![Dashboard](docs/health.png)
 
-| Connector (YAML only) | Data → table | Login | Paging |
+## Quick start
+
+```bash
+./run.sh                 # installs on first run, then serves http://127.0.0.1:8100
+CF_LAB=1 ./run.sh        # also starts mock vendor APIs on :9100 for failure drills
+```
+
+Open the page, **create an account** (email notifications go to registered addresses), then add secrets on the
+**Secrets** tab and connectors with **Add connector** (form, YAML, file upload, or a template).
+
+Requires Python 3.10+. `make help` lists the development tasks.
+
+## What is connected
+
+12 live integrations in [`integrations/connectors/`](integrations/connectors/), 31 endpoints, verified against the
+real APIs (2 are switched off until the account has the needed plan or permission: Atlassian audit log, CrowdStrike
+host groups):
+
+| Integration | Endpoints | Login | Paging |
 |---|---|---|---|
-| [`connectors/github_advisories.yaml`](connectors/github_advisories.yaml), **GitHub REST API** | security advisories → `events` | Personal access token (Bearer) | Link header (cursor) |
-| [`connectors/nvd_cves.yaml`](connectors/nvd_cves.yaml), **NVD CVE API 2.0** | vulnerabilities → `events` | API key in header (optional) | Offset (`startIndex`), incremental by `lastModified` |
-| [`connectors/cisa_kev.yaml`](connectors/cisa_kev.yaml), **CISA KEV** | actively exploited CVEs → `events` | None | None |
+| CISA | Known Exploited Vulnerabilities | none | none |
+| FIRST EPSS | likely-exploited CVEs | none | offset |
+| NIST NVD | CVEs, CVE change history | optional API key | offset + incremental |
+| GitHub | advisories, users, repositories | bearer token | Link header |
+| AbuseIPDB | blacklist, IP check, abuse reports | API key | page number |
+| Atlassian | users, audit log, Jira issues, projects, Confluence spaces | basic (email + token) | offset, token, next link |
+| Cloudflare | audit logs, members, zones | bearer token | page number + incremental |
+| CrowdStrike Falcon | hosts, alerts, host groups | OAuth2 client credentials | token |
+| Elastic Security | detection alerts, users | API key | offset in body + incremental |
+| Google Cloud | audit logs, IAM changes, errors | service-account JWT | page token |
+| Okta | users, system log, groups | SSWS token | Link header + incremental |
+| Sophos Central | endpoints, alerts | OAuth2 + region discovery | page key |
 
-The three connectors use three login types and three paging styles. All of them were verified live: CISA returned 1,766 records, NVD returned about 140 CVEs from the last 6 hours, and GitHub's mapping was checked against real advisories.
+Templates: [`integrations/examples/`](integrations/examples/) (11 ready-to-fill files for free or trial APIs) and
+[`integrations/catalog/`](integrations/catalog/) (51 enterprise vendor templates: SIEM, EDR, DLP, firewall, cloud).
+Catalog templates are written from vendor API documentation and validated against lab imitations, not run against
+real tenants: use **Test connection** and **Preview** on yours first.
 
-There are also configs ready for **users**. Fill in your account details and set the secret:
+## Writing a connector
 
-* [`examples/okta_users.yaml`](examples/okta_users.yaml): Okta, SSWS token, Link cursor.
-* [`examples/jira_users.yaml`](examples/jira_users.yaml): Jira Cloud, Basic email + API token, `startAt`/`maxResults` offset.
-* [`examples/abuseipdb_reports.yaml`](examples/abuseipdb_reports.yaml): AbuseIPDB, key header, page number.
+One file describes an integration: the login and base URL once, then every endpoint to pull.
 
-**Lab sources** in [`lab/`](lab/) run against a local mock (`connectforge/mock`) and are off by default; start with `CF_LAB=1 ./run.sh` to add them (`cli remove-lab` clears their secrets and data again). They fill the **users** and **devices** tables offline and let you run the PRD's failure drills on demand: 429s, outages, malformed records, a poisoned next-page link, AWS SigV4 and a tailed firewall log.
+```yaml
+id: github
+name: GitHub
+auth: {type: bearer, secret: github_token}         # the secret's name; its value lives in the vault
+request: {base_url: https://api.github.com}
+pagination: {type: link_header, page_size_param: per_page, page_size: 50}
+endpoints:
+  - name: advisories
+    entity: event                                   # user | device | event | record
+    path: /advisories
+    schedule: {every: 15m}
+    mapping:                                        # optional: left out, it is learned from real data
+      id: ghsa_id
+      severity: {from: severity, lower: true}
+      timestamp: published_at
+      description: summary
+  - {name: users, entity: user, path: /users}
+  - {name: repos, entity: record, path: /user/repos}
+```
 
-## Enterprise coverage: 36 vendor configs in [`catalog/`](catalog/)
-
-Every tool on Mitigata's list has a ready config. **No vendor-specific code was added to the platform;** each tool is just a YAML file.
-
-| Category | Tools | How they connect |
-|---|---|---|
-| SIEM / XDR | Elastic Security, LogRhythm, Cortex XSIAM | API: ApiKey bearer + offsets in the body; bearer + offset; advanced-key hash + `request_data.search_from/to` |
-| | ArcSight, Seceon, Gurucul, Log360, Binary Search | Syslog **CEF** |
-| EDR | Sophos Intercept X | OAuth2 → **whoami discovery** (region host + `X-Tenant-ID`) → cursor with `has_more` |
-| | Trend Vision One, Trellix EDR, Symantec SES | Bearer + `nextLink`; OAuth2 + JSON:API `links.next`; OAuth2 + `next` in the body |
-| | Kaspersky EDR, Seqrite XDR | Syslog CEF |
-| DLP | Symantec DLP, Netskope, Digital Guardian, Trellix DLP (ePO), Zscaler ZIA | Basic + page in the body; token header + offset; OAuth2 + positional rows; basic; **obfuscated-key session cookie** |
-| | Forcepoint DLP, Safetica | Syslog CEF |
-| Firewalls | FortiGate (REST), Cisco FMC (**header token** → devices) | API |
-| | Check Point, SonicWall, Sophos Firewall, Juniper SRX, WatchGuard | Syslog: CEF, key=value or regex, sharing one receiver and separated by `file.filter` |
-| Cloud | AWS Security Hub + GuardDuty, Google SCC, Wiz, Prisma Cloud, Orca, Lacework, CrowdStrike | SigV4 + nested `Filters.UpdatedAt[0]`; **service-account JWT**; OAuth2 `audience` + **GraphQL cursor**; **token exchange** (body or header); `Token` scheme |
-
-**Status:** catalog configs are **templates** written from the vendors' public API documentation. Each one validates, and all of the platform features they use are tested end to end against lab imitations in [`lab/enterprise/`](lab/enterprise/). They have **not** been run against real tenants, so use **Test connection** and **Dry-run preview** on yours first.
-
-### Platform features added for enterprise tools (all config-driven)
-
-| Feature | Config | Used by |
-|---|---|---|
-| Token-exchange login (token from the body, a header or a cookie, cached and refreshed on 401) | `auth: {type: token_exchange, login: {url, json/form/headers/basic, token_from, token_path}}` | Prisma, Lacework, Cisco FMC, Zscaler |
-| Discovery after login (region base URL and tenant headers) | `auth.discover: {url, base_url_path, headers}` with wildcard `allowed_hosts` (`*.central.sophos.com`) | Sophos Central |
-| OAuth2 extras | `client_auth: body`, `extra: {audience: …}` | Wiz, Sophos, CrowdStrike, Digital Guardian |
-| Google service account | `auth: {type: google_service_account, secret: <JSON key>, scope}` (RS256 JWT) | Google SCC |
-| Cortex advanced API keys | `auth: {type: cortex_advanced, key_id, secret}` | Cortex XSIAM/XDR |
-| Zscaler key obfuscation | `${zscaler_key:secret}` and `${now_ms}` in the login body | Zscaler ZIA |
-| Nested request paths for paging and cursors | `params_in: body`, `token_param: variables.after`, `offset_param: request_data.search_from`, `offset_end_param`, `has_more_path` | Wiz GraphQL, XSIAM, Symantec DLP, Elastic, AWS |
-| XML responses (DOCTYPE/ENTITY refused) | `request.response_format: xml` | XML appliance APIs |
-| Syslog receiver + CEF parser | `CF_SYSLOG_PORT` (UDP), `file: {format: cef, filter: …}` | Check Point, ArcSight, Kaspersky, Forcepoint, … |
-
-**Security of the new login flows:**
-* Login and discovery calls go through the same **egress allowlist** as data calls.
-* A discovered host must match `allowed_hosts`.
-* Login uses a throw-away HTTP client, and the shared client's cookies are cleared after every response, so **one connector's session can never reach another's**.
-* Credentials inside login bodies must be `${secret:…}` references.
+* **Login:** `none`, `api_key` (header or query), `bearer` (any scheme), `basic`, `oauth2_client_credentials`
+  (with discovery, audience, body credentials), `aws_sigv4`, `token_exchange`, `google_service_account`,
+  `cortex_advanced`.
+* **Paging:** `link_header`, `next_url`, `next_token`, `page_number`, `offset`, `none`. If the next page's location
+  is not given, the engine finds it in the response.
+* **Mapping:** nested paths (`a.b[0].c`), `template`, `const`, `map`, `regex`, `parse_json`, dates and epochs,
+  type casts. Leave `mapping` out and fields are matched automatically and checked against real values; Preview
+  shows the result to pin or adjust.
+* **Files written by an AI assistant** are accepted as they come (chat text, JSON, JSONPath, other key names,
+  `${TOKEN}`-style secrets...). **Validate** lists every automatic fix and offers the corrected YAML; anything
+  ambiguous is refused with a reason. A real credential in a file is always refused.
+* `connectforge upgrade FILE...` turns older single-endpoint files into this format.
 
 ## Requirement map
 
-### What a config file can describe
-
 | ID | Requirement | How |
 |---|---|---|
-| FR-1 | Authentication: API key plus at least one more | `api_key` (header or query), `bearer` (any scheme, e.g. Okta `SSWS`), `basic`, `oauth2_client_credentials` (cached and refreshed on 401, `audience`, credentials in the body), `aws_sigv4` (signatures match botocore byte for byte), `token_exchange` (body, header or cookie), `google_service_account`, `cortex_advanced`. The PRD syntax works as written: `auth: { type: api_key, header: X-API-Key, secret: okta_key }` |
-| FR-2 | Endpoints, method, query params | `request: {base_url, path, method, params, headers, body}` |
-| FR-3 | Pagination (2+ styles) | `link_header`, `next_url`, `next_token` (query or body), `page_number`, `offset` (with `total_path`, `offset_end_param`), `none`; values can sit at nested body paths (`variables.after`); `has_more_path` stop flag |
-| FR-4 | Schedule | `schedule: {every: 15m}` (`30s`, `2h`, …); the built-in scheduler runs each connector independently |
-| FR-5 | Mapping to a common schema | `email: profile.login` shorthand, nested paths `a.b[0].c`, `template`, `const`, `map` lookups, `parse_json`, `regex`, date and epoch conversion, type casts |
+| FR-1 | Auth: API key + one more | 9 login types (above); the PRD syntax `auth: {type: api_key, header: X-API-Key, secret: okta_key}` works as written |
+| FR-2 | Endpoints | path, method, params, headers, body; several endpoints per file sharing one login |
+| FR-3 | ≥ 2 paging styles | 6 styles, nested body paths, `has_more_path`, automatic next-page discovery |
+| FR-4 | Schedule | per integration and per endpoint (`30s`, `15m`, `1d`); resumes across restarts without re-running everything |
+| FR-5 | Mapping | direct mapping (rename, nested, dates, casts) and automatic mapping |
+| FR-6 | Safe secrets | Fernet-encrypted vault or HashiCorp Vault / AWS Secrets Manager; files hold names only; write-only; scoped per connector; audited; redacted from errors |
+| FR-7 | Retries | 1 s, 2 s, 4 s, then failed; 401/403 fail fast with the provider's message |
+| FR-8 | Rate limits | token bucket per connector; `Retry-After` / `X-Rate-Limit-Reset` on 429 |
+| FR-9 | Bad data | each bad record quarantined with its exact reason; the run continues |
+| FR-10 | Health view | status, last run, pulled / new / updated / rejected, retries, next run, checkpoint, last error; a Data tab per endpoint |
+| FR-11 | One store | `users`, `devices`, `events` (+ `records` for anything else), keyed by `(source, id)`; every row keeps `source` and `fetched_at` |
+| B-1 | Incremental sync | `cursor:` checkpoint saved only after a successful run |
+| B-2 | Validate config | strict schema, "did you mean" hints, automatic fixes for AI-written files |
+| B-3 | Test connection | one authenticated request, nothing stored |
+| B-4 | Alerts | Slack + email: failing / recovered, credential rejected, bad-data spike, new critical findings, key due for rotation |
+| B-5 | Web form | builds a multi-endpoint integration and generates the YAML |
 
-### What the platform provides to every connector
+Common schema: **users** (id, name, email, status, last_login, title, department, mfa_enabled), **devices**
+(id, hostname, ip, os, owner, last_seen, mac, status), **events** (id, type, severity, timestamp, description,
+user, src_ip, dst_ip, dst_port, action, outcome, cve, product, url, country, score).
 
-| ID | Requirement | How |
-|---|---|---|
-| FR-6 | Secrets stored safely | Pluggable secret manager chosen with `CF_SECRETS_BACKEND`: **HashiCorp Vault**, **AWS Secrets Manager**, environment variables, or the built-in Fernet-encrypted vault (`data/vault.json`, key kept separately, `data/` gitignored) for offline demos. Configs hold only secret names, and literal credentials are rejected at validation. Secrets are write-only in the UI and API. Each connector can read only the secrets its own config names; every read is audited; any secret that appears in an error is redacted. |
-| FR-7 | Retries with backoff | Timeouts, network errors and 5xx/429 are retried after **1 s, 2 s, 4 s**, then the run is marked failed. 401/403 fail immediately with "authentication failed — check the secret". |
-| FR-8 | Rate limits | A token bucket per connector, plus **`Retry-After`** / `X-Rate-Limit-Reset` honoured on 429 |
-| FR-9 | Bad data handling | Each record that fails mapping is quarantined with its exact reason (e.g. `last_login: Invalid isoformat string: 'yesterday'`). The run continues. |
-| FR-10 | Health view | Per connection: status (healthy, degraded, failing, paused), last run, records pulled, new, updated, quarantined, retries, duration, next run, checkpoint, last error and retry log |
-| FR-11 | One store, common schema | SQLite `users`, `devices` and `events` tables, keyed by `(source, id)` so re-fetches update rows in place. **Every row keeps `source` and `fetched_at`.** JSONL export is at `/api/records/{table}.jsonl`. |
+## Secrets and key rotation
 
-### Bonus
+Secrets are referenced by name. To rotate: create a new key at the vendor, paste it on the **Secrets** tab (or
+`connectforge set-secret NAME`), check with **Test connection**, revoke the old key. Sessions made from the old key
+are dropped at once; keys older than 90 days trigger a reminder.
 
-| ID | Feature | How |
-|---|---|---|
-| B-1 | Incremental sync | `cursor:` stores the newest timestamp per connector and sends it next run (NVD `lastModStartDate`/`lastModEndDate`, CloudTrail `StartTime`); files resume from a byte offset |
-| B-2 | Validate config with clear errors | Every config is checked before it runs: unknown fields, missing required mappings, pasted credentials, hosts outside the allowlist, bad durations, YAML errors. Available as **Validate** in the UI and `cli validate`. |
-| B-3 | Test connection | **Test connection** button on every card and in the add-source form, plus `cli test`. It makes one authenticated request with no retries and stores nothing. |
-| B-4 | Alerts on repeated failure | After 3 failed runs, a Slack/Teams-compatible webhook alert is sent (`alert_webhook` secret or `CF_ALERT_WEBHOOK`), followed by a recovery alert. The circuit backs off meanwhile. All alerts are listed on the **Alerts** tab. |
-| B-5 | Add a source through a web form | **+ Add source → Web form**: endpoint, login, paging, schedule and field mapping, with target fields offered from the schema. It **generates the YAML**, then you Validate, Test, Preview and Save. The new source runs without a restart. |
-
-### Common schema (§4)
-
-| Table | Fields (+ `source`, `fetched_at` on every row) |
-|---|---|
-| `users` | id, name, email, status, last_login (+ title, department, mfa_enabled) |
-| `devices` | id, hostname, ip, os, owner, last_seen (+ mac, status) |
-| `events` | id, type, severity, timestamp, description (+ user, src_ip, dst_ip, dst_port, action, outcome, cve, product, url, country, score) |
-
-## Run it
-
-```bash
-./run.sh                                   # platform + health page on :8100 (real connectors only)
-CF_LAB=1 ./run.sh                          # also the mock lab sources on :9100, for failure drills
-```
-
-Set your secrets:
-
-```bash
-.venv/bin/python -m connectforge.cli set-secret github_token     # prompts, never echoed
-.venv/bin/python -m connectforge.cli set-secret nvd_api_key      # optional
-```
-
-Other commands:
-
-```bash
-.venv/bin/python -m connectforge.cli validate connectors/*.yaml examples/*.yaml lab/*.yaml
-.venv/bin/python -m connectforge.cli test github-advisories
-.venv/bin/python -m pytest -q                                    # 81 tests, ~2 s, no network
-```
-
-You can also set secrets on the **Secrets** tab.
-
-### Using an external secret manager
-
-Connector configs do not change: they still say `${secret:github_token}`. The platform decides where that name is looked up.
-
-| `CF_SECRETS_BACKEND` | Where `github_token` is read from | Settings |
+| `CF_SECRETS_BACKEND` | Where `github_token` is read | Settings |
 |---|---|---|
 | `local` (default) | encrypted `data/vault.json` | none |
-| `hashicorp` | KV v2: `secret/data/<prefix>github_token`, field `value` | `VAULT_ADDR`, `VAULT_TOKEN`, optional `CF_VAULT_MOUNT`, `CF_VAULT_FIELD`, `VAULT_NAMESPACE` |
-| `aws` | Secrets Manager secret `<prefix>github_token` (SecretString) | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN` |
+| `hashicorp` | KV v2 `secret/data/<prefix>github_token`, field `value` | `VAULT_ADDR`, `VAULT_TOKEN`, `CF_VAULT_MOUNT`, `CF_VAULT_FIELD`, `VAULT_NAMESPACE` |
+| `aws` | Secrets Manager `<prefix>github_token` | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` |
 | `env` | `CF_SECRET_GITHUB_TOKEN` | none |
 
-`CF_SECRETS_PREFIX` (for example `connectforge/`) is put in front of every name. Values are cached for `CF_SECRETS_CACHE_SECONDS` (default 300), so a rotation in the manager is picked up within five minutes. With an external manager, values are set and rotated there; the Secrets tab becomes read-only and shows which connector uses each secret and whether it was found. Per-connector scoping, the audit log and redaction still apply.
+With an external manager, rotate there and click **Reload** (or wait for `CF_SECRETS_CACHE_SECONDS`, default 300);
+a 401 also re-reads the secret and retries once.
 
-### Rotating a key
+## Notifications
 
-No connector file changes; only the value behind the name changes.
+**Notifications** sends to a Slack incoming webhook (Teams and Mattermost work too) and/or email over SMTP, to every
+registered account plus optional extra addresses. Each rule can be switched off, repeats are held back for the
+cooldown (60 minutes by default), and a connection's first run is a baseline rather than news. The webhook URL and
+SMTP password are secrets (`slack_webhook`, `smtp_password`).
 
-* **Built-in vault:** paste the new value on the **Secrets** tab and click **Save**, or run `cli set-secret <name>` (works while the server is running). Any login token made from the old key is dropped, so the very next request uses the new one. The tab shows each key's age and flags keys older than 90 days.
-* **External manager:** rotate it in Vault or AWS, then click **Reload** on the Secrets tab to use it immediately. Without that it is picked up when the cache expires, or at once if the provider rejects the old key: a 401 drops the cached value, re-reads it from the manager and retries once.
-* Every change is in the **Audit log** (`secret.put`, `secret.refresh`), never with the value.
+## Configuration
 
-Try it with a local HashiCorp Vault dev server:
+| Variable | Default | Purpose |
+|---|---|---|
+| `CF_HOST`, `CF_PORT` | `127.0.0.1`, `8100` | where `run.sh` serves the app |
+| `CF_DATA_DIR` | `data` | database, vault and master key |
+| `CF_CONNECTORS_DIRS` | `integrations/connectors` | colon-separated connector folders; the first one receives UI saves |
+| `CF_LAB` | off | `1` adds the mock lab sources and their connectors |
+| `CF_SIGNUP` | `open` | `closed` stops new accounts once your team has signed up |
+| `CF_ADMIN_TOKEN` | unset | lets scripts call the API with an `X-Admin-Token` header |
+| `CF_MASTER_KEY` | file in `data/` | vault encryption key (use a KMS-provided value in production) |
+| `CF_SYSLOG_PORT`, `CF_SYSLOG_HOST` | `5514` (run.sh), `127.0.0.1` | UDP syslog/CEF receiver for push-only devices |
+| `CF_SMTP_HOST`, `CF_SMTP_PORT`, `CF_SMTP_USER`, `CF_SMTP_FROM`, `CF_ALERT_EMAIL_TO` | unset | email settings from the environment |
+| `CF_ALERT_WEBHOOK` | unset | Slack-compatible webhook URL from the environment |
+
+## Failure drills (PRD "testing failures")
+
+| Drill | Do this | You see |
+|---|---|---|
+| Wrong key | save a bad value for a secret, **Run now** | HTTP 401 at once, the provider's message, a "credential rejected" notice, no key in logs |
+| Network off | turn Wi-Fi off, **Run now** | retries 1 s / 2 s / 4 s, then failed; after 3 runs "failing" + notice; recovers by itself |
+| 429 | `CF_LAB=1`, run **Okta users (lab)** | "HTTP 429 → retry in 1s (Retry-After)" |
+| Missing fields | any lab source | the Quarantine tab shows each bad record and its reason |
+| Outage | `curl -X POST localhost:9100/mock/chaos -d '{"source":"edr","mode":"outage"}' -H 'content-type: application/json'` | retries, then failing, notice, recovery |
+| Poisoned next link | same with `{"source":"okta","mode":"evil_link"}` | blocked before sending; credentials never leave; `egress.blocked` in the audit log |
+
+## Development
 
 ```bash
-vault server -dev -dev-root-token-id=root &
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/connectforge/github_token value=ghp_...
-CF_SECRETS_BACKEND=hashicorp CF_SECRETS_PREFIX=connectforge/ \
-  VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root ./run.sh
+make install    # .venv + ConnectForge with dev tools
+make test       # 197 tests, no network
+make lint       # ruff: style, bugs, security rules
+make stress     # 85 AI-written configs: rewritten correctly or refused for the right reason
+make fuzz       # 20,000 randomly damaged config files: no crashes
 ```
 
-## Failure drills (PRD "Testing failures with real APIs")
+Code layout and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). CI runs lint, tests and the AI corpus on
+every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)). A container image builds from the
+[Dockerfile](Dockerfile) (data in the `/app/data` volume).
 
-| Drill | Do this | You'll see |
-|---|---|---|
-| Wrong or expired key | Set `github_token` to `bad` and click **Run now** | Fails fast: "HTTP 401: authentication failed — check the secret (github_token)", with no retries and no key in the logs |
-| Network off mid-run | Turn Wi-Fi off and click **Run now** on NVD | Retries 1 s, 2 s, 4 s, then "network error (ConnectError)". After 3 runs the status is **failing** and an alert is sent. Turn Wi-Fi on and it recovers by itself, with a recovery alert. |
-| Calling faster than the limit (429) | Run **Lab: Okta users** (the mock rate-limits every 3rd call) | Retry log: "HTTP 429 → retry 1 in 1s (Retry-After)" |
-| Missing fields fed to the mapper | Any lab source | The Quarantined tab shows each bad record and its exact reason. The run stays OK. |
-| Outage | `curl -X POST localhost:9100/mock/chaos -H 'content-type: application/json' -d '{"source":"edr","mode":"outage"}'` | 1/2/4 s retries, then failing; alert after 3 runs |
-| Stolen-token redirect (INC-05) | Same command with `{"source":"okta","mode":"evil_link"}` | The request to `evil.example` is blocked before sending, so credentials are never sent, and `egress.blocked` appears in the audit log |
+## Security notes
 
-## 3-minute demo
-
-1. **Health page.** Three real APIs with three login types and three paging styles all land in one `events` table. Point at the records pulled and the last-run times.
-2. **+ Add source → Web form.** Pick the `user` table, set the endpoint and login, map `email ← profile.login`, then **Generate config**, **Validate**, **Test connection**, **Save**. A new card appears in seconds.
-3. **Users / Devices / Events tabs.** Different tools land in the same shape, and every row shows `source` and `fetched_at`.
-4. **Break it.** Use a wrong key, turn Wi-Fi off, and set a lab outage. Show the 1/2/4 s retries, the **failing** status and the alert, then the recovery.
-5. **Secrets tab.** Values are never shown, configs only name them, and access is scoped and audited.
-
-## Layout
-
-```
-connectforge/
-  spec.py       config language + validation (FR-1..5, B-2)
-  mapping.py    field mapping engine (FR-5)
-  auth.py       api_key / bearer / basic / OAuth2 / SigV4, ${secret:} and ${env:} refs
-  runtime.py    rate limit, retry/backoff, pagination, incremental sync, scheduler, health, alerts, test
-  vault.py      scoped, audited secrets (FR-6); local encrypted store or a backend below
-  secret_backends.py  HashiCorp Vault, AWS Secrets Manager, env (CF_SECRETS_BACKEND)
-  syslog.py     UDP syslog receiver for push-only devices
-  store.py      users / devices / events tables + state (FR-11)
-  server.py     REST API + health page
-  static/       health page, tables, web form (B-5)
-  mock/         lab sources with fault injection
-connectors/     real free-tier APIs (YAML only)
-catalog/        36 enterprise vendor configs (SIEM, EDR, DLP, firewall, cloud)
-lab/enterprise/ lab imitations of each enterprise auth/paging pattern
-examples/       ready-to-fill configs for Okta, Jira, AbuseIPDB
-lab/            mock-backed connectors for failure drills
-```
+* Everything behind a login: scrypt password hashes, HttpOnly SameSite=Strict session cookies (only their hash
+  stored), lockout after 5 wrong passwords.
+* Calls only go to hosts a connector declares (egress allowlist, wildcards supported); redirects are never followed
+  with credentials; one connector's cookies never reach another.
+* Config intake refuses YAML bombs, `!!python` tags, duplicate keys and files over 256 KB; XML with DOCTYPE/ENTITY is
+  refused.
+* `data/`, `.env`, keys and certificates are ignored by git.
 
 ## Disclosure
 
-The runtime uses FastAPI, Uvicorn, httpx, Pydantic, PyYAML and cryptography (Fernet). The tests use pytest, pytest-asyncio and botocore (only to cross-check SigV4 signatures). The live data comes from public free-tier APIs: GitHub, NIST NVD and CISA KEV. Lab data is synthetic and uses RFC 5737 IP addresses and `.example` domains. The code was built with AI coding assistance (Claude Code).
+Runtime: FastAPI, Uvicorn, httpx, Pydantic, PyYAML, cryptography. Tests: pytest, pytest-asyncio, botocore (only to
+cross-check SigV4). Live data comes from the vendors listed above; lab data is synthetic (RFC 5737 addresses,
+`.example` domains). Built with AI coding assistance.

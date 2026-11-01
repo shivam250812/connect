@@ -1,0 +1,47 @@
+# Sophos Central / Intercept X — alerts via OAuth2 + whoami discovery.
+id: sophos-intercept-x
+name: Sophos Intercept X alerts
+source: sophos_central
+allowed_hosts:
+- id.sophos.com
+- '*.central.sophos.com'
+auth:
+  type: oauth2_client_credentials
+  token_url: https://id.sophos.com/api/v2/oauth2/token
+  client_id: ${secret:sophos_client_id}
+  secret: sophos_client_secret
+  client_auth: body
+  scope: token
+  discover:
+    url: https://api.central.sophos.com/whoami/v1
+    base_url_path: apiHosts.dataRegion
+    headers:
+      X-Tenant-ID: id
+request:
+  base_url: https://api.central.sophos.com
+endpoints:
+- name: alerts
+  title: Sophos Intercept X alerts
+  entity: event
+  path: /siem/v1/alerts
+  records: items
+  pagination:
+    type: next_token
+    token_path: next_cursor
+    token_param: cursor
+    has_more_path: has_more
+    page_size_param: limit
+    page_size: 100
+  mapping:
+    id: id
+    type:
+      from: type
+      lower: true
+    severity:
+      from: severity
+      lower: true
+    timestamp: raisedAt
+    description: description
+    product: source
+  schedule:
+    every: 5m

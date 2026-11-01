@@ -1,13 +1,14 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from connectforge import server
+from connectforge.api import deps
+from connectforge.api.app import app
 
 
 @pytest.fixture()
 def client(platform, monkeypatch):
-    monkeypatch.setattr(server, "platform", platform)
-    return TestClient(server.app)
+    monkeypatch.setattr(deps, "platform", platform)
+    return TestClient(app)
 
 
 def test_health_page_data(client):
@@ -30,7 +31,7 @@ def test_records_tables(client):
 
 
 def test_validate_test_and_save(client):
-    text = open("lab/edr_devices_lab.yaml").read().replace("id: lab-edr-devices", "id: edr-copy")
+    text = open("integrations/lab/edr_devices_lab.yaml").read().replace("id: lab-edr-devices", "id: edr-copy")
     v = client.post("/api/connectors/validate", json={"yaml": text}).json()
     assert v["valid"] and v["summary"]["table"] == "devices"
     t = client.post("/api/test", json={"yaml": text}).json()
@@ -59,3 +60,11 @@ def test_admin_token(client, monkeypatch):
 def test_static_traversal_blocked(client):
     assert client.get("/static/..%2Fserver.py").status_code == 404
     assert client.get("/").status_code == 200
+
+
+def test_jsonl_export(client):
+    client.post("/api/connectors/lab-okta-users/run")
+    r = client.get("/api/records/users.jsonl")
+    assert r.status_code == 200
+    rows = [__import__("json").loads(line) for line in r.text.splitlines() if line]
+    assert rows and all(row["source"] == "okta_lab" for row in rows)

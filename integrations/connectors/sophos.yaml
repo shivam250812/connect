@@ -1,0 +1,50 @@
+# Sophos Central (real API) -> devices and events. One API credential (Secrets tab: sophos_client_secret).
+# Login: OAuth2 client credentials, then "whoami" discovery finds your region and tenant · Paging: pageFromKey
+id: sophos
+name: Sophos Central
+source: sophos
+allowed_hosts: [id.sophos.com, api.central.sophos.com, "*.central.sophos.com"]
+auth:
+  type: oauth2_client_credentials
+  token_url: https://id.sophos.com/api/v2/oauth2/token
+  client_id: 91610241-a9dc-4f1c-b9ee-239badb32f3e
+  secret: sophos_client_secret
+  client_auth: body
+  scope: token
+  discover: {url: "https://api.central.sophos.com/whoami/v1", base_url_path: apiHosts.dataRegion, headers: {X-Tenant-ID: id}}
+request: {base_url: "https://api.central.sophos.com"}
+endpoints:
+  - name: endpoints
+    title: Endpoints
+    entity: device
+    path: /endpoint/v1/endpoints
+    params: {pageTotal: "true"}
+    schedule: {every: 1h}
+    pagination: {type: next_token, token_path: pages.nextKey, token_param: pageFromKey, page_size_param: pageSize, page_size: 500}
+    records: items
+    mapping:
+      id: id
+      hostname: hostname
+      ip: "ipv4Addresses[0]"
+      os: {template: "{os.name} {os.majorVersion}.{os.minorVersion}"}
+      owner: associatedPerson.viaLogin
+      last_seen: lastSeenAt
+      status: health.overall
+
+  - name: alerts
+    title: Alerts
+    description: Threats, policy violations and health alerts raised by Sophos
+    entity: event
+    path: /common/v1/alerts
+    params: {pageTotal: "true"}
+    schedule: {every: 5m}
+    pagination: {type: next_token, token_path: pages.nextKey, token_param: pageFromKey, page_size_param: pageSize, page_size: 100}
+    records: items
+    mapping:
+      id: id
+      type: {from: type, default: sophos_alert}
+      severity: {from: severity, lower: true, default: unknown}
+      timestamp: raisedAt
+      description: {from: description, default: "Sophos alert"}
+      product: {template: "Sophos {product}"}
+      action: "allowedActions[0]"

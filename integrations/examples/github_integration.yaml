@@ -1,0 +1,26 @@
+# GitHub as one integration: three endpoints, one token, no mapping written.
+# Shared: login, base URL, headers, paging, rate limit. Each endpoint: its path and where the data goes.
+id: github
+name: GitHub
+auth: {type: bearer, secret: github_token}
+request:
+  base_url: https://api.github.com
+  headers: {Accept: application/vnd.github+json, X-GitHub-Api-Version: "2022-11-28"}
+pagination: {type: link_header, page_size_param: per_page, page_size: 50, max_pages: 2}
+rate_limit: {requests_per_second: 1, burst: 2}
+schedule: {every: 1h}
+endpoints:
+  - name: advisories
+    title: Security advisories
+    entity: event
+    path: /advisories
+  - name: users
+    title: Users
+    entity: user
+    path: /users
+  - name: repos
+    title: My repositories
+    entity: record          # not a user, device or event: every field is kept and shown
+    path: /user/repos
+    params: {sort: updated}
+    columns: [id, title, visibility, language, stargazers_count, open_issues_count, html_url, timestamp]

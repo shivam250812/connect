@@ -1,0 +1,35 @@
+# Trend Micro Vision One — Workbench alerts.
+# Login: Bearer API key · Paging: nextLink (full URL) in the body · Incremental: startDateTime
+# Use your region's host (api.xdr.trendmicro.com, api.eu.xdr.trendmicro.com, api.in.xdr.trendmicro.com, ...).
+# Status: TEMPLATE — written from the vendor's public API docs; verify endpoint, fields and permissions
+#         against your tenant (Test connection + Dry-run preview) before relying on it.
+id: trend-vision-one
+name: Trend Vision One workbench alerts
+source: trend_v1
+auth:
+  type: bearer
+  secret: trend_v1_token
+request:
+  base_url: https://api.xdr.trendmicro.com
+endpoints:
+- name: alerts
+  title: Trend Vision One workbench alerts
+  entity: event
+  path: /v3.0/workbench/alerts
+  records: items
+  pagination:
+    type: next_url
+    token_path: nextLink
+  cursor:
+    field: createdDateTime
+    param: startDateTime
+    initial: -1d
+    format: iso_z
+  mapping:
+    id: id
+    type: model
+    severity: severity
+    timestamp: createdDateTime
+    description: description
+  schedule:
+    every: 10m

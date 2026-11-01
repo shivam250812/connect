@@ -1,0 +1,34 @@
+# CrowdStrike Falcon hosts -> the DEVICES table.
+# Login: OAuth2 client credentials (sent in the body) · Paging: offset token from meta.pagination.offset
+# Needs an API client with "Hosts: Read" (Falcon console -> Support and resources -> API clients and keys).
+# Not on US-1? Change both hosts: api.us-2.crowdstrike.com, api.eu-1.crowdstrike.com, api.laggar.gcw.crowdstrike.com
+# no mapping: device_id, hostname, local_ip, platform_name, last_login_user, last_seen, mac_address and status
+# are matched automatically. Check them with Preview.
+id: crowdstrike-hosts
+name: CrowdStrike Falcon hosts
+source: crowdstrike
+auth:
+  type: oauth2_client_credentials
+  token_url: https://api.crowdstrike.com/oauth2/token
+  client_id: ${env:CROWDSTRIKE_CLIENT_ID}
+  secret: crowdstrike_client_secret
+  client_auth: body
+request:
+  base_url: https://api.crowdstrike.com
+endpoints:
+- name: devices
+  title: CrowdStrike Falcon hosts
+  entity: device
+  path: /devices/combined/devices/v1
+  params:
+    sort: last_seen.desc
+  records: resources
+  pagination:
+    type: next_token
+    token_path: meta.pagination.offset
+    token_param: offset
+    page_size_param: limit
+    page_size: 100
+    max_pages: 50
+  schedule:
+    every: 15m

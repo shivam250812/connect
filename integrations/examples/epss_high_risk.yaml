@@ -1,0 +1,43 @@
+# FIRST EPSS — Exploit Prediction Scoring System (real API, free, no account) -> events
+# Which CVEs are most likely to be exploited in the next 30 days. Only those with EPSS > 0.9.
+# Login: none · Paging: offset (offset / limit, stops at `total`) · Entity: event
+id: epss-high-risk
+name: FIRST EPSS likely-exploited CVEs
+source: epss
+request:
+  base_url: https://api.first.org
+rate_limit:
+  requests_per_second: 2
+  burst: 2
+endpoints:
+- name: epss
+  title: FIRST EPSS likely-exploited CVEs
+  entity: event
+  path: /data/v1/epss
+  params:
+    epss-gt: 0.9
+  timeout_seconds: 30
+  records: data
+  pagination:
+    type: offset
+    offset_param: offset
+    page_size_param: limit
+    page_size: 100
+    total_path: total
+    max_pages: 15
+  mapping:
+    id: cve
+    type:
+      const: exploit_prediction
+    severity:
+      const: critical
+    score: epss
+    timestamp: date
+    description:
+      template: 'EPSS {epss}: exploitation likely within 30 days (percentile {percentile})'
+    cve: cve
+    url:
+      template: https://api.first.org/data/v1/epss?cve={cve}
+  description: CVEs with a >90% predicted chance of exploitation in the next 30 days
+  schedule:
+    every: 1d

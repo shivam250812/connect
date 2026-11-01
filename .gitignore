@@ -1,14 +1,20 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
 .pytest_cache/
-# runtime state — contains the encrypted vault and its master key: never commit
+.ruff_cache/
+
+# runtime state: contains the encrypted vault, its master key and the database. Never commit.
 data/
 master.key
 *.key
 *.pem
 
-# local credentials and personal files — never commit
+# local credentials and personal files. Never commit.
 .env
 *.env
 *.jpeg

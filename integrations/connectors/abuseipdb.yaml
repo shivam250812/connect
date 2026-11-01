@@ -1,0 +1,68 @@
+# AbuseIPDB as one integration: three endpoints, one API key (abuseipdb.com -> Account -> API).
+# Login: API key in the `Key` header. Free plan limits per day: blacklist 5, check 1000, reports 100,
+# so the schedules below stay well inside them.
+id: abuseipdb
+name: AbuseIPDB
+source: abuseipdb
+auth: {type: api_key, header: Key, secret: abuseipdb_key}
+request:
+  base_url: https://api.abuseipdb.com
+  headers: {Accept: application/json}
+rate_limit: {requests_per_second: 1, burst: 2}
+endpoints:
+  # Most-reported malicious IPs worldwide -> events (a threat-intel feed)
+  - name: blacklist
+    title: Blacklisted IPs
+    entity: event
+    path: /api/v2/blacklist
+    params: {confidenceMinimum: 90, limit: 500}
+    schedule: {every: 1d}
+    records: data
+    mapping:
+      id: ipAddress
+      type: {const: malicious_ip}
+      severity: {const: high}
+      timestamp: lastReportedAt
+      description: {template: "{ipAddress} reported with {abuseConfidenceScore}% abuse confidence"}
+      src_ip: ipAddress
+      country: countryCode
+      score: abuseConfidenceScore
+
+  # Reputation of one IP you care about -> records (every field kept and shown)
+  - name: check
+    title: IP reputation check
+    entity: record
+    path: /api/v2/check
+    params: {ipAddress: 118.25.6.39, maxAgeInDays: 90}
+    schedule: {every: 6h}
+    records: data
+    mapping:
+      id: ipAddress
+      title: {template: "{ipAddress} ({isp})"}
+      timestamp: lastReportedAt
+      abuse_score: abuseConfidenceScore
+      country: countryCode
+      isp: isp
+      domain: domain
+      usage_type: usageType
+      total_reports: totalReports
+      distinct_reporters: numDistinctUsers
+      is_tor: isTor
+      whitelisted: isWhitelisted
+
+  # Individual abuse reports against that IP -> events
+  - name: reports
+    title: Abuse reports
+    entity: event
+    path: /api/v2/reports
+    params: {ipAddress: 118.25.6.39, maxAgeInDays: 30}
+    schedule: {every: 6h}
+    pagination: {type: page_number, page_param: page, page_size_param: perPage, page_size: 100, max_pages: 3}
+    records: data.results
+    mapping:
+      id: {template: "{reportedAt}-{reporterId}"}
+      type: {const: abuse_report}
+      severity: {const: medium}
+      timestamp: reportedAt
+      description: comment
+      country: reporterCountryCode

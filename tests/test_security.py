@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from connectforge.auth import make_resolver, sigv4_headers
-from connectforge.vault import SecretAccessDenied, SecretMissing, Vault
+from connectforge.security.auth import make_resolver, sigv4_headers
+from connectforge.security.vault import SecretAccessDenied, SecretMissing, Vault
 
 
 def test_vault_encrypts_scopes_audits_and_redacts(tmp_path):
@@ -79,7 +79,7 @@ mapping: {id: id, type: {const: alert}, timestamp: ts}
 
 import pytest as _pytest  # noqa: E402
 
-from connectforge.spec import SpecError, parse_spec  # noqa: E402
+from connectforge.config.schema import SpecError, parse_spec  # noqa: E402
 
 
 @_pytest.mark.parametrize("req, expect", [
@@ -116,8 +116,12 @@ def test_token_pasted_in_a_description_is_rejected():
 
 import httpx as _httpx  # noqa: E402
 
-from connectforge.secret_backends import (AwsSecretsManagerBackend, CachedBackend, EnvBackend,  # noqa: E402
-                                          HashiCorpVaultBackend)
+from connectforge.security.secret_backends import (  # noqa: E402
+    AwsSecretsManagerBackend,
+    CachedBackend,
+    EnvBackend,
+    HashiCorpVaultBackend,
+)
 
 
 def _hashicorp(store, calls):

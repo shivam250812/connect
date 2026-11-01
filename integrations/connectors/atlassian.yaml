@@ -1,0 +1,113 @@
+# Atlassian Cloud (Jira + Confluence) as one integration: five endpoints, one login.
+# Login: Basic auth = your Atlassian account email + an API token
+#        (id.atlassian.com/manage-profile/security/api-tokens -> Create API token).
+#
+# Before uploading:
+#   1. Replace YOUR-SITE (three places) with your site name: https://YOUR-SITE.atlassian.net
+#   2. Replace you@example.com with the email you log in with.
+#   3. Secrets tab: save the API token as atlassian_api_token.
+# The audit log endpoint needs a Jira administrator account; the others work for any user.
+id: atlassian
+name: Atlassian
+source: atlassian
+auth:
+  type: basic
+  username: abhivir2005@gmail.com
+  secret: atlassian_api_token
+request:
+  base_url: https://abhivirsworkspace-28028485.atlassian.net
+  headers: {Accept: application/json}
+rate_limit: {requests_per_second: 2, burst: 4}
+schedule: {every: 1h}
+endpoints:
+  # Everyone with access to the site -> users
+  - name: users
+    title: Users
+    entity: user
+    path: /rest/api/3/users/search
+    pagination: {type: offset, offset_param: startAt, page_size_param: maxResults, page_size: 100, max_pages: 20}
+    mapping:
+      id: accountId
+      name: displayName
+      email: emailAddress
+      status: {from: active, map: {"True": active, "False": inactive}}
+      title: accountType                 # atlassian = person, app = bot/integration, customer = JSM customer
+
+  # Admin audit log: permission changes, user added/removed, settings changed -> events
+  - name: audit
+    title: Audit log
+    enabled: false   # Jira Free has no audit log (Atlassian answers 403). Set true on Standard or higher.
+    entity: event
+    path: /rest/api/3/auditing/record
+    schedule: {every: 15m}
+    pagination: {type: offset, offset_param: offset, page_size_param: limit, page_size: 100, total_path: total, max_pages: 20}
+    cursor: {field: created, param: from, initial: -7d, format: iso_z}
+    records: records
+    mapping:
+      id: {from: id, type: str}
+      type: category
+      severity: {const: info}
+      timestamp: created
+      description: summary
+      user: authorAccountId
+      src_ip: {from: remoteAddress, regex: '^(\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]{3,})$'}
+      product: eventSource
+
+  # Jira issues changed in the last 30 days -> records (narrow the JQL, e.g. `labels = security`)
+  - name: issues
+    title: Jira issues
+    entity: record
+    path: /rest/api/3/search/jql
+    params:
+      jql: "updated >= -30d ORDER BY updated DESC"
+      fields: "summary,status,priority,issuetype,project,assignee,reporter,created,updated,labels"
+    pagination: {type: next_token, token_path: nextPageToken, token_param: nextPageToken, page_size_param: maxResults, page_size: 100, max_pages: 10}
+    records: issues
+    mapping:
+      id: key
+      title: fields.summary
+      timestamp: fields.updated
+      status: fields.status.name
+      priority: fields.priority.name
+      type: fields.issuetype.name
+      project: fields.project.key
+      assignee: fields.assignee.displayName
+      reporter: fields.reporter.displayName
+      created: fields.created
+      labels: fields.labels
+      url: {template: "https://abhivirsworkspace-28028485.atlassian.net/browse/{key}"}
+    columns: [id, title, status, priority, type, project, assignee, timestamp, url]
+
+  # Jira projects -> records
+  - name: projects
+    title: Jira projects
+    entity: record
+    path: /rest/api/3/project/search
+    params: {expand: lead}
+    schedule: {every: 1d}
+    pagination: {type: offset, offset_param: startAt, page_size_param: maxResults, page_size: 50, total_path: total, max_pages: 10}
+    records: values
+    mapping:
+      id: {from: id, type: str}
+      title: name
+      key: key
+      type: projectTypeKey
+      lead: lead.displayName
+      private: isPrivate
+      url: {template: "https://abhivirsworkspace-28028485.atlassian.net/browse/{key}"}
+
+  # Confluence spaces (v2 API, cursor in `_links.next`) -> records
+  - name: spaces
+    title: Confluence spaces
+    entity: record
+    path: /wiki/api/v2/spaces
+    schedule: {every: 1d}
+    pagination: {type: next_url, token_path: _links.next, page_size_param: limit, page_size: 100, max_pages: 10}
+    records: results
+    mapping:
+      id: {from: id, type: str}
+      title: name
+      key: key
+      type: type
+      status: status
+      timestamp: createdAt

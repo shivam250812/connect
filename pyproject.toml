@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "connectforge"
+version = "0.3.0"
+description = "Config-driven security integration platform: a new data source is a YAML file, not code."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Team ConnectForge" }]
+dependencies = [
+  "fastapi==0.143.1",
+  "uvicorn[standard]==0.54.0",
+  "httpx==0.28.1",
+  "pydantic==2.14.1",
+  "pyyaml==6.0.3",
+  "cryptography==50.0.2",
+  "python-multipart==0.0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.1",
+  "botocore==1.43.123",   # only used to cross-check our AWS SigV4 signatures
+  "ruff==0.8.4",
+]
+
+[project.scripts]
+connectforge = "connectforge.cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/connectforge"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = [
+  "E501",    # long lines are allowed where splitting hurts readability (mapping tables, messages)
+  "B008",    # FastAPI's Depends() in defaults is the intended idiom
+  "S101",    # assert is fine in tests
+  "S105", "S106",  # "token"/"secret" names in test fixtures and settings are not credentials
+  "S311",    # random is used for retry jitter, not for security
+  "S324",    # sha1/md5 are not used for security
+  "UP006", "UP007", "UP035",  # keep typing.Dict/Optional for readability across 3.10+
+  "UP038",   # isinstance(x, (A, B)) is clearer and faster than A | B (rule deprecated upstream)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+"scripts/**" = ["S"]
+"src/connectforge/lab/**" = ["S"]   # mock vendors for drills: fixed lab credentials by design
+# table names come only from the fixed TABLES list; every value is a bound parameter
+"src/connectforge/storage/store.py" = ["S608"]

@@ -1,0 +1,48 @@
+# Wiz — cloud security issues via GraphQL.
+# Login: OAuth2 client credentials with audience=wiz-api · Paging: GraphQL cursor at variables.after
+id: wiz-issues
+name: Wiz issues
+source: wiz
+allowed_hosts:
+- auth.app.wiz.io
+- api.us1.app.wiz.io
+auth:
+  type: oauth2_client_credentials
+  token_url: https://auth.app.wiz.io/oauth/token
+  client_id: ${secret:wiz_client_id}
+  secret: wiz_client_secret
+  client_auth: body
+  extra:
+    audience: wiz-api
+request:
+  base_url: https://api.us1.app.wiz.io
+endpoints:
+- name: graphql
+  title: Wiz issues
+  entity: event
+  path: /graphql
+  method: POST
+  body:
+    query: 'query IssuesTable($first: Int, $after: String) { issues: issuesV2(first: $first, after: $after) { nodes { id severity
+      status createdAt sourceRule { name } entitySnapshot { name type } } pageInfo { hasNextPage endCursor } } }'
+    variables:
+      first: 100
+  records: data.issues.nodes
+  pagination:
+    type: next_token
+    params_in: body
+    token_path: data.issues.pageInfo.endCursor
+    token_param: variables.after
+    has_more_path: data.issues.pageInfo.hasNextPage
+  mapping:
+    id: id
+    type:
+      template: wiz_{sourceRule.name}
+    severity:
+      from: severity
+      lower: true
+    timestamp: createdAt
+    description:
+      template: '{sourceRule.name} on {entitySnapshot.name} ({entitySnapshot.type})'
+  schedule:
+    every: 15m
